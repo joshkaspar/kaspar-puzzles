@@ -1,0 +1,5 @@
+name: tracks_proto
+description: Train Tracks puzzle generator, logic solver and playtest page builder.
+publish_to: none
+environment:
+  sdk: ^3.5.0

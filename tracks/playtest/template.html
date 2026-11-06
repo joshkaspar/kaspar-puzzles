@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Train Tracks playtest</title>
+<style>
+  :root { color-scheme: light; --ink: #1f2328; --muted: #6b7280; --line: #d0d4da; --accent: #2f5fd0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: #f6f7f9; }
+  main { max-width: 600px; margin: 0 auto; padding: 12px 12px 40px; }
+  h1 { font-size: 20px; margin: 4px 0 10px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  button { font: inherit; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  #date { font-weight: 600; min-width: 120px; text-align: center; }
+  #info { color: var(--muted); font-size: 14px; }
+  #timer { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; }
+  #board { width: 100%; display: block; background: #fff; border: 1px solid var(--line); border-radius: 10px; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #msg { min-height: 24px; margin: 8px 0; font-weight: 600; }
+  #msg.good { color: #1a7f37; }
+  #msg.bad { color: #c62828; }
+  #result { display: none; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+  #result code { display: block; margin: 6px 0; user-select: all; -webkit-user-select: all; font-size: 14px; }
+  .help { color: var(--muted); font-size: 14px; }
+  .help b { color: var(--ink); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Train Tracks playtest</h1>
+  <div class="row">
+    <button id="prev" aria-label="Previous day">◀</button>
+    <span id="date"></span>
+    <button id="next" aria-label="Next day">▶</button>
+    <button id="today">Today</button>
+  </div>
+  <div class="row" id="tabs"></div>
+  <div class="row">
+    <span id="info"></span>
+    <span id="timer">0:00</span>
+  </div>
+  <svg id="board"></svg>
+  <div id="msg"></div>
+  <div id="result">
+    <div id="resultHead"></div>
+    <code id="resultText"></code>
+    <button id="copy">Copy result</button>
+  </div>
+  <div class="row">
+    <button id="undo">Undo</button>
+    <button id="check">Check for mistakes</button>
+    <button id="restart">Restart</button>
+  </div>
+  <p class="help">
+    <b>Goal:</b> lay one track from A to B. The numbers say how many squares in each row and column have track.
+    Track never crosses or branches. Dark pieces are given.<br>
+    <b>Drag</b> from square to square to lay track; drag along existing track to remove it.
+    <b>Tap</b> a square to mark it: • (track here), then ✕ (no track), then clear.
+  </p>
+</main>
+<script>
+const DATA = /*DATA*/null;
+
+const N = 1, E = 2, S = 4, W = 8, DIRS = [N, E, S, W];
+const LETTER = { N, E, S, W };
+const opp = d => d === N ? S : d === S ? N : d === E ? W : E;
+const bits = m => (m & 1) + (m >> 1 & 1) + (m >> 2 & 1) + (m >> 3 & 1);
+const LABEL = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
+
+function decode(s, sol) {
+  const f = s.split(':');
+  const [w, h] = f[0].split('x').map(Number);
+  const b36 = c => parseInt(c, 36);
+  const port = t => ({ cell: b36(t[0]) * w + b36(t[1]), dir: LETTER[t[2]] });
+  const [a, b] = f[1].split('.').map(port);
+  const hints = {};
+  for (const t of f[4].split('.').filter(Boolean)) hints[b36(t[0]) * w + b36(t[1])] = parseInt(t.slice(2), 16);
+  return { w, h, a, b, rows: [...f[2]].map(b36), cols: [...f[3]].map(b36), hints,
+           sol: [...sol].map(c => parseInt(c, 16)) };
+}
+
+// ------------------------------------------------------------ state ----
+const dates = Object.keys(DATA.puzzles).sort();
+const now0 = new Date(); // the player's local date, not UTC
+const todayStr = `${now0.getFullYear()}-${String(now0.getMonth() + 1).padStart(2, '0')}-${String(now0.getDate()).padStart(2, '0')}`;
+let dateIdx = Math.max(0, dates.indexOf(todayStr));
+let slot = 0;
+let P, G; // puzzle, geometry
+let st;   // { edges:Set, marks:{cell:1|2}, time, solved, checks, undos }
+let undoStack = [];
+let flash = new Set(), flashTimer = null;
+
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+const key = (d = dates[dateIdx], s = slot) => `tracks-play:v${DATA.version}:${d}:${DATA.slots[s].name}`;
+
+function geometry(p) {
+  const { w, h } = p, hBase = h * (w + 1);
+  const side = (c, d) => {
+    const r = Math.floor(c / w), q = c % w;
+    return d === N ? hBase + r * w + q : d === S ? hBase + (r + 1) * w + q
+         : d === W ? r * (w + 1) + q : r * (w + 1) + q + 1;
+  };
+  const fixed = new Set([side(p.a.cell, p.a.dir), side(p.b.cell, p.b.dir)]);
+  for (const [c, m] of Object.entries(p.hints)) for (const d of DIRS) if (m & d) fixed.add(side(+c, d));
+  return { side, fixed };
+}
+
+function load() {
+  const [enc, sol] = DATA.puzzles[dates[dateIdx]][slot];
+  P = decode(enc, sol);
+  G = geometry(P);
+  const saved = store.get(key());
+  st = saved ? { ...saved, edges: new Set(saved.edges), lit: new Set(saved.lit ?? []) }
+             : { edges: new Set(), lit: new Set(), marks: {}, time: 0, solved: false, checks: 0, undos: 0 };
+  for (const e of G.fixed) st.edges.add(e);
+  undoStack = [];
+  flash.clear();
+  setMsg('');
+  render();
+}
+
+function save() { store.set(key(), { ...st, edges: [...st.edges], lit: [...st.lit] }); }
+function snapshot() {
+  undoStack.push(JSON.stringify({ edges: [...st.edges], lit: [...st.lit], marks: st.marks }));
+  if (undoStack.length > 300) undoStack.shift();
+}
+const mask = c => DIRS.reduce((m, d) => st.edges.has(G.side(c, d)) ? m | d : m, 0);
+// What the player sees. A given piece draws only inside its own square (as in
+// print): its connection into a neighbouring square appears once the player
+// draws track in that square or drags across the joint. Ports likewise.
+function shown(c) {
+  if (P.hints[c] !== undefined || st.solved) return mask(c);
+  let own = 0, fixedOn = 0;
+  for (const d of DIRS) {
+    const e = G.side(c, d);
+    if (!st.edges.has(e)) continue;
+    if (!G.fixed.has(e)) own |= d;
+    else fixedOn |= d;
+  }
+  let m = own;
+  for (const d of DIRS) if (fixedOn & d && (own || st.lit.has(G.side(c, d)))) m |= d;
+  return m;
+}
+
+// ----------------------------------------------------------- render ----
+const C = 44, OX = 30, OY = 64;
+const svgNS = 'http://www.w3.org/2000/svg';
+const board = document.getElementById('board');
+
+function mid(c, d) {
+  const x = OX + (c % P.w) * C + C / 2, y = OY + Math.floor(c / P.w) * C + C / 2;
+  return [x + (d === E ? C / 2 : d === W ? -C / 2 : 0), y + (d === S ? C / 2 : d === N ? -C / 2 : 0)];
+}
+function trackPath(c, m) {
+  const x = OX + (c % P.w) * C + C / 2, y = OY + Math.floor(c / P.w) * C + C / 2;
+  const ds = DIRS.filter(d => m & d);
+  if (ds.length === 2) {
+    const [p1, p2] = ds.map(d => mid(c, d));
+    if (m === (N | S) || m === (E | W)) return `M${p1}L${p2}`;
+    const cx = (ds.includes(E) ? x + C / 2 : x - C / 2), cy = (ds.includes(S) ? y + C / 2 : y - C / 2);
+    let delta = Math.atan2(p2[1] - cy, p2[0] - cx) - Math.atan2(p1[1] - cy, p1[0] - cx);
+    while (delta > Math.PI) delta -= 2 * Math.PI;
+    while (delta <= -Math.PI) delta += 2 * Math.PI;
+    return `M${p1}A${C / 2} ${C / 2} 0 0 ${delta > 0 ? 1 : 0} ${p2}`;
+  }
+  return ds.map(d => `M${mid(c, d)}L${x},${y}`).join('');
+}
+function portStub(p) {
+  const [x, y] = mid(p.cell, p.dir), L = 12;
+  const dx = p.dir === E ? L : p.dir === W ? -L : 0, dy = p.dir === S ? L : p.dir === N ? -L : 0;
+  const ox = dx ? 0 : G_, oy = dx ? G_ : 0;
+  return { d: `M${x},${y}l${dx},${dy}`,
+           rails: `M${x - ox},${y - oy}l${dx},${dy}M${x + ox},${y + oy}l${dx},${dy}`,
+           lx: x + dx * 1.6, ly: y + dy * 1.6 };
+}
+// Two rails, G_ either side of the centre line.
+const G_ = 6;
+function railPath(c, m) {
+  const x = OX + (c % P.w) * C + C / 2, y = OY + Math.floor(c / P.w) * C + C / 2;
+  const ds = DIRS.filter(d => m & d);
+  const off = (d, k) => { // point on side d's midpoint, shifted k across the track
+    const [px, py] = mid(c, d);
+    return d === N || d === S ? [px + k, py] : [px, py + k];
+  };
+  if (ds.length === 2 && m !== (N | S) && m !== (E | W)) {
+    const cx = ds.includes(E) ? x + C / 2 : x - C / 2, cy = ds.includes(S) ? y + C / 2 : y - C / 2;
+    const [p1, p2] = ds.map(d => mid(c, d));
+    let delta = Math.atan2(p2[1] - cy, p2[0] - cx) - Math.atan2(p1[1] - cy, p1[0] - cx);
+    while (delta > Math.PI) delta -= 2 * Math.PI;
+    while (delta <= -Math.PI) delta += 2 * Math.PI;
+    const sweep = delta > 0 ? 1 : 0;
+    return [C / 2 - G_, C / 2 + G_].map(r => {
+      const q = ([px, py]) => [cx + (px - cx) * r / (C / 2), cy + (py - cy) * r / (C / 2)];
+      return `M${q(p1)}A${r} ${r} 0 0 ${sweep} ${q(p2)}`;
+    }).join('');
+  }
+  if (m === (N | S) || m === (E | W)) {
+    return [-G_, G_].map(k => `M${off(ds[0], k)}L${off(ds[1], k)}`).join('');
+  }
+  return ds.map(d => [-G_, G_].map(k => {
+    const [px, py] = off(d, k);
+    const [qx, qy] = d === N || d === S ? [x + k, y] : [x, y + k];
+    return `M${px},${py}L${qx},${qy}`;
+  }).join('')).join('');
+}
+
+function render() {
+  const { w, h } = P;
+  const W_ = OX + w * C + 62, H_ = OY + h * C + 32;
+  board.setAttribute('viewBox', `0 0 ${W_} ${H_}`);
+  const out = [];
+  const rowCount = Array(h).fill(0), colCount = Array(w).fill(0);
+  const masks = [];
+  for (let c = 0; c < w * h; c++) {
+    masks[c] = shown(c);
+    // a square counts toward the clues if it has track or a • mark
+    if (masks[c] || st.marks[c] === 2) { rowCount[Math.floor(c / w)]++; colCount[c % w]++; }
+  }
+  // cells
+  for (let c = 0; c < w * h; c++) {
+    const x = OX + (c % w) * C, y = OY + Math.floor(c / w) * C;
+    const fill = flash.has(c) ? '#ffd6d6' : P.hints[c] !== undefined ? '#eef0f3' : '#fff';
+    out.push(`<rect x="${x}" y="${y}" width="${C}" height="${C}" fill="${fill}" stroke="#c9ced6" stroke-width="1"/>`);
+  }
+  out.push(`<rect x="${OX}" y="${OY}" width="${w * C}" height="${h * C}" fill="none" stroke="#5b6270" stroke-width="2"/>`);
+  // marks
+  for (const [cs, v] of Object.entries(st.marks)) {
+    const c = +cs; if (masks[c]) continue;
+    const x = OX + (c % w) * C + C / 2, y = OY + Math.floor(c / w) * C + C / 2;
+    if (v === 1) out.push(`<path d="M${x - 8},${y - 8}l16,16M${x + 8},${y - 8}l-16,16" stroke="#9aa1ad" stroke-width="2.5" stroke-linecap="round"/>`);
+    else out.push(`<circle cx="${x}" cy="${y}" r="5" fill="${'#3b4252'}"/>`);
+  }
+  // track: wooden ties along the centre line, then two thin rails on top
+  const groups = { given: [], player: [], bad: [] }, centre = [];
+  for (let c = 0; c < w * h; c++) {
+    const m = masks[c]; if (!m) continue;
+    const g = bits(m) > 2 ? 'bad' : P.hints[c] !== undefined ? 'given' : 'player';
+    groups[g].push(railPath(c, m));
+    centre.push(trackPath(c, m));
+  }
+  const stubs = [P.a, P.b].map(portStub);
+  const ties = [...centre, ...stubs.map(s => s.d)].join('');
+  out.push(`<path d="${ties}" fill="none" stroke="#8a6a48" stroke-width="${2 * G_ + 12}" stroke-dasharray="4 5"/>`);
+  const colors = { given: '#1f2328', player: '#2f5fd0', bad: '#c62828' };
+  for (const [g, ds] of Object.entries(groups)) {
+    const d = ds.join('') + (g === 'given' ? stubs.map(s => s.rails).join('') : '');
+    if (d) out.push(`<path d="${d}" fill="none" stroke="${colors[g]}" stroke-width="3.2" stroke-linecap="butt"/>`);
+  }
+  // port labels
+  for (const [i, s] of stubs.entries()) {
+    out.push(`<circle cx="${s.lx}" cy="${s.ly}" r="8" fill="#1f2328"/>`);
+    out.push(`<text x="${s.lx}" y="${s.ly + 4}" font-size="11.5" font-weight="700" fill="#fff" text-anchor="middle">${'AB'[i]}</text>`);
+  }
+  // clues: columns on top, rows on the right
+  const clue = (have, want) => have === want ? '#a3a9b3' : have > want ? '#c62828' : '#1f2328';
+  for (let q = 0; q < w; q++) {
+    const x = OX + q * C + C / 2;
+    out.push(`<text x="${x}" y="${OY - 36}" font-size="19" font-weight="600" text-anchor="middle" fill="${clue(colCount[q], P.cols[q])}">${P.cols[q]}</text>`);
+  }
+  for (let r = 0; r < h; r++) {
+    const y = OY + r * C + C / 2 + 6.5;
+    out.push(`<text x="${OX + w * C + 44}" y="${y}" font-size="19" font-weight="600" text-anchor="middle" fill="${clue(rowCount[r], P.rows[r])}">${P.rows[r]}</text>`);
+  }
+  board.innerHTML = out.join('');
+
+  // chrome
+  document.getElementById('date').textContent = dates[dateIdx];
+  document.getElementById('prev').disabled = dateIdx === 0;
+  document.getElementById('next').disabled = dateIdx === dates.length - 1;
+  const tabs = document.getElementById('tabs');
+  tabs.innerHTML = '';
+  DATA.slots.forEach((s, i) => {
+    const b = document.createElement('button');
+    const done = (i === slot ? st : store.get(key(dates[dateIdx], i)))?.solved;
+    b.textContent = `${LABEL[s.name] ?? s.name} ${s.size}×${s.size}${done ? ' ✓' : ''}`;
+    if (i === slot) b.className = 'on';
+    b.onclick = () => { slot = i; load(); };
+    tabs.appendChild(b);
+  });
+  const nh = Object.keys(P.hints).length;
+  document.getElementById('info').textContent = `${nh} given piece${nh === 1 ? '' : 's'} · logic level ${DATA.slots[slot].level}`;
+  document.getElementById('undo').disabled = !undoStack.length || st.solved;
+  document.getElementById('check').disabled = st.solved;
+  showTime();
+  showResult();
+}
+
+function fmt(ms) { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
+function showTime() { document.getElementById('timer').textContent = fmt(st.time); }
+function resultLine() {
+  const s = DATA.slots[slot];
+  return `${dates[dateIdx]} ${s.name} ${s.size}x${s.size}: ${fmt(st.time)}, ${st.checks} check${st.checks === 1 ? '' : 's'}, ${st.undos} undo${st.undos === 1 ? '' : 's'}`;
+}
+function showResult() {
+  const box = document.getElementById('result');
+  box.style.display = st.solved ? 'block' : 'none';
+  if (!st.solved) return;
+  document.getElementById('resultHead').textContent = `Solved in ${fmt(st.time)}!`;
+  document.getElementById('resultText').textContent = resultLine();
+}
+function setMsg(t, cls = '') { const m = document.getElementById('msg'); m.textContent = t; m.className = cls; }
+
+function afterChange() {
+  if (P.sol.every((m, c) => mask(c) === m)) {
+    st.solved = true;
+    st.marks = {};
+    flash.clear();
+    setMsg('');
+  }
+  save();
+  render();
+}
+
+// ------------------------------------------------------------ input ----
+let drag = null;
+function cellAt(ev) {
+  const pt = board.createSVGPoint();
+  pt.x = ev.clientX; pt.y = ev.clientY;
+  const p = pt.matrixTransform(board.getScreenCTM().inverse());
+  const q = Math.floor((p.x - OX) / C), r = Math.floor((p.y - OY) / C);
+  return q >= 0 && q < P.w && r >= 0 && r < P.h ? r * P.w + q : -1;
+}
+function between(a, b) {
+  const w = P.w;
+  if (Math.floor(a / w) === Math.floor(b / w)) return G.side(Math.min(a, b), E);
+  return G.side(Math.min(a, b), S);
+}
+board.addEventListener('pointerdown', ev => {
+  if (st.solved) return;
+  const c = cellAt(ev); if (c < 0) return;
+  board.setPointerCapture(ev.pointerId);
+  drag = { start: c, last: c, moved: false, mode: null };
+  ev.preventDefault();
+});
+board.addEventListener('pointermove', ev => {
+  if (!drag) return;
+  const c = cellAt(ev); if (c < 0 || c === drag.last) return;
+  const w = P.w;
+  while (drag.last !== c) {
+    const lr = Math.floor(drag.last / w), lq = drag.last % w, tr = Math.floor(c / w), tq = c % w;
+    const next = Math.abs(tr - lr) >= Math.abs(tq - lq) ? drag.last + Math.sign(tr - lr) * w : drag.last + Math.sign(tq - lq);
+    const e = between(drag.last, next);
+    const fixed = G.fixed.has(e);
+    if (!drag.mode) { drag.mode = (fixed ? st.lit.has(e) : st.edges.has(e)) ? 'erase' : 'draw'; snapshot(); }
+    if (drag.mode === 'draw') {
+      if (fixed) st.lit.add(e); else st.edges.add(e);
+      delete st.marks[drag.last]; delete st.marks[next];
+    } else if (fixed) st.lit.delete(e);
+    else st.edges.delete(e);
+    drag.moved = true;
+    drag.last = next;
+  }
+  render();
+});
+function endDrag(ev) {
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (!d.moved && cellAt(ev) === d.start && P.hints[d.start] === undefined && !shown(d.start)) {
+    snapshot();
+    const v = st.marks[d.start];
+    if (!v) st.marks[d.start] = 2; else if (v === 2) st.marks[d.start] = 1; else delete st.marks[d.start];
+  }
+  afterChange();
+}
+board.addEventListener('pointerup', endDrag);
+board.addEventListener('pointercancel', () => { drag = null; afterChange(); });
+
+document.getElementById('undo').onclick = () => {
+  const s = undoStack.pop(); if (!s) return;
+  const o = JSON.parse(s);
+  st.edges = new Set(o.edges); st.lit = new Set(o.lit); st.marks = o.marks; st.undos++;
+  afterChange();
+};
+document.getElementById('check').onclick = () => {
+  st.checks++;
+  flash = new Set();
+  for (let c = 0; c < P.w * P.h; c++) {
+    const m = mask(c), sol = P.sol[c], mk = st.marks[c];
+    if ((m & ~sol) || (mk === 1 && sol) || (mk === 2 && !sol)) flash.add(c);
+  }
+  setMsg(flash.size ? `${flash.size} square${flash.size === 1 ? '' : 's'} wrong (shown in red)` : 'No mistakes so far',
+         flash.size ? 'bad' : 'good');
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { flash.clear(); render(); }, 2500);
+  save(); render();
+};
+let restartArmed = null;
+document.getElementById('restart').onclick = ev => {
+  const btn = ev.currentTarget;
+  if (!restartArmed) {
+    btn.textContent = 'Tap again to restart';
+    restartArmed = setTimeout(() => { restartArmed = null; btn.textContent = 'Restart'; }, 3000);
+    return;
+  }
+  clearTimeout(restartArmed); restartArmed = null; btn.textContent = 'Restart';
+  store.del(key()); load();
+};
+document.getElementById('copy').onclick = async ev => {
+  try { await navigator.clipboard.writeText(resultLine()); ev.currentTarget.textContent = 'Copied'; }
+  catch { ev.currentTarget.textContent = 'Copy failed — select the text above'; }
+};
+document.getElementById('prev').onclick = () => { if (dateIdx > 0) { dateIdx--; load(); } };
+document.getElementById('next').onclick = () => { if (dateIdx < dates.length - 1) { dateIdx++; load(); } };
+document.getElementById('today').onclick = () => { dateIdx = Math.max(0, dates.indexOf(todayStr)); load(); };
+
+// timer: runs while the page is visible and the puzzle unsolved
+let lastTick = performance.now();
+setInterval(() => {
+  const now = performance.now(), dt = now - lastTick; lastTick = now;
+  if (document.hidden || !st || st.solved) return;
+  st.time += Math.min(dt, 2000);
+  showTime();
+  if (Math.floor(st.time / 1000) % 5 === 0) save();
+}, 1000);
+document.addEventListener('visibilitychange', () => { lastTick = performance.now(); if (st) save(); });
+
+load();
+</script>
+</body>
+</html>
