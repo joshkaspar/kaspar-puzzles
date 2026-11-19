@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Train Tracks playtest</title>
 <style>
-  :root { color-scheme: light; --ink: #1f2328; --muted: #6b7280; --line: #d0d4da; --accent: #2f5fd0; }
+  :root { color-scheme: light; --ink: #1f2328; --muted: #6b7280; --line: #d0d4da; --accent: #2f5fd0; --good: #1a7f37; --good-soft: #c9ecd4; }
   * { box-sizing: border-box; }
   body { margin: 0; font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: #f6f7f9; }
   main { max-width: 600px; margin: 0 auto; padding: 12px 12px 40px; }
@@ -17,12 +17,26 @@
   #date { font-weight: 600; min-width: 120px; text-align: center; }
   #info { color: var(--muted); font-size: 14px; }
   #timer { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; }
-  #board { width: 100%; display: block; background: #fff; border: 1px solid var(--line); border-radius: 10px; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #boardWrap { position: relative; }
+  #board { width: 100%; display: block; background: #fff; border: 1px solid var(--line); border-radius: 10px; touch-action: none; user-select: none; -webkit-user-select: none; transition: border-color .4s, box-shadow .4s; }
+  #board.solved { border-color: var(--good); box-shadow: 0 0 0 3px var(--good-soft); }
+  #timer.solved { color: var(--good); }
   #msg { min-height: 24px; margin: 8px 0; font-weight: 600; }
-  #msg.good { color: #1a7f37; }
+  #msg.good { color: var(--good); }
   #msg.bad { color: #c62828; }
-  #result { display: none; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
-  #result code { display: block; margin: 6px 0; user-select: all; -webkit-user-select: all; font-size: 14px; }
+  /* Solved card: floats over the board once the train reaches B. */
+  #result { display: none; position: absolute; inset: 0; align-items: center; justify-content: center; padding: 16px; border-radius: 10px; background: rgba(246, 247, 249, .55); }
+  #result.show { display: flex; }
+  #result.pop .card { animation: pop .35s cubic-bezier(.2, 1.4, .4, 1) both; }
+  #result .card { background: #fff; border: 2px solid var(--good); border-radius: 14px; padding: 18px 20px 16px; text-align: center; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); max-width: 320px; width: 100%; }
+  #resultHead { font-size: 28px; font-weight: 800; color: var(--good); }
+  #resultTime { font-size: 40px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; margin: 2px 0 4px; }
+  #resultSub { color: var(--muted); font-size: 14px; margin-bottom: 10px; }
+  #result code { display: none; margin: 0 0 12px; user-select: all; -webkit-user-select: all; font-size: 13px; color: var(--muted); }
+  #result .row { justify-content: center; margin: 0; }
+  #copy { background: var(--good); border-color: var(--good); color: #fff; font-weight: 600; }
+  @keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { #result.pop .card { animation: none; } }
   .help { color: var(--muted); font-size: 14px; }
   .help b { color: var(--ink); }
 </style>
@@ -41,13 +55,22 @@
     <span id="info"></span>
     <span id="timer">0:00</span>
   </div>
-  <svg id="board"></svg>
-  <div id="msg"></div>
-  <div id="result">
-    <div id="resultHead"></div>
-    <code id="resultText"></code>
-    <button id="copy">Copy result</button>
+  <div id="boardWrap">
+    <svg id="board"></svg>
+    <div id="result" role="dialog" aria-labelledby="resultHead">
+      <div class="card">
+        <div id="resultHead">Solved!</div>
+        <div id="resultTime"></div>
+        <div id="resultSub"></div>
+        <code id="resultText"></code>
+        <div class="row">
+          <button id="copy">Copy result</button>
+          <button id="closeResult">See board</button>
+        </div>
+      </div>
+    </div>
   </div>
+  <div id="msg"></div>
   <div class="row">
     <button id="undo">Undo</button>
     <button id="check">Check for mistakes</button>
@@ -88,9 +111,15 @@ const todayStr = `${now0.getFullYear()}-${String(now0.getMonth() + 1).padStart(2
 let dateIdx = Math.max(0, dates.indexOf(todayStr));
 let slot = 0;
 let P, G; // puzzle, geometry
-let st;   // { edges:Set, marks:{cell:1|2}, time, solved, checks, undos }
+let st;   // { edges:Set, lit:Set, marks:{cell:1|2}, time, solved, checks }
 let undoStack = [];
 let flash = new Set(), flashTimer = null;
+// Solve celebration: a train runs A→B along the finished track, then the result card pops up.
+let celebrate = false;   // set on the move that solves the puzzle; render() starts the run
+let animId = null;       // requestAnimationFrame id while the train is running
+let resultOpen = false;  // result card wanted (hidden while the train is still running)
+let popNext = false;     // animate the card's entrance on its next showing
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
 const store = {
   get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
@@ -117,10 +146,15 @@ function load() {
   G = geometry(P);
   const saved = store.get(key());
   st = saved ? { ...saved, edges: new Set(saved.edges), lit: new Set(saved.lit ?? []) }
-             : { edges: new Set(), lit: new Set(), marks: {}, time: 0, solved: false, checks: 0, undos: 0 };
+             : { edges: new Set(), lit: new Set(), marks: {}, time: 0, solved: false, checks: 0 };
+  delete st.undos; // older saves counted undos; no longer tracked
   for (const e of G.fixed) st.edges.add(e);
   undoStack = [];
   flash.clear();
+  stopTrain();
+  celebrate = false;
+  resultOpen = st.solved; // revisiting a solved puzzle shows its result straight away
+  popNext = false;
   setMsg('');
   render();
 }
@@ -210,6 +244,57 @@ function railPath(c, m) {
   }).join('')).join('');
 }
 
+// The solution as one continuous path from A's stub to B's stub, for the train to follow.
+// seg() is the piece through cell c entering at side d1 and leaving at d2 (no leading M).
+function seg(c, d1, d2) {
+  const x = OX + (c % P.w) * C + C / 2, y = OY + Math.floor(c / P.w) * C + C / 2;
+  const p1 = mid(c, d1), p2 = mid(c, d2);
+  if (d1 === opp(d2)) return `L${p2}`;
+  const cx = d1 === E || d2 === E ? x + C / 2 : x - C / 2, cy = d1 === S || d2 === S ? y + C / 2 : y - C / 2;
+  let delta = Math.atan2(p2[1] - cy, p2[0] - cx) - Math.atan2(p1[1] - cy, p1[0] - cx);
+  while (delta > Math.PI) delta -= 2 * Math.PI;
+  while (delta <= -Math.PI) delta += 2 * Math.PI;
+  return `A${C / 2} ${C / 2} 0 0 ${delta > 0 ? 1 : 0} ${p2}`;
+}
+function route() {
+  const stubEnd = p => { const [x, y] = mid(p.cell, p.dir), L = 12;
+    return [x + (p.dir === E ? L : p.dir === W ? -L : 0), y + (p.dir === S ? L : p.dir === N ? -L : 0)]; };
+  let c = P.a.cell, from = P.a.dir, d = `M${stubEnd(P.a)}L${mid(c, from)}`;
+  for (let i = 0; i < P.w * P.h; i++) {
+    const out = P.sol[c] & ~from;
+    d += seg(c, from, out);
+    if (c === P.b.cell && out === P.b.dir) return d; // stop at the board edge, clear of B's label
+    c += out === N ? -P.w : out === S ? P.w : out === E ? 1 : -1;
+    from = opp(out);
+  }
+  return null; // not a single A→B path; skip the train rather than draw nonsense
+}
+const TRAIN = `<g id="train"><rect x="-12" y="-8" width="24" height="16" rx="4" fill="#1f2328"/>` +
+              `<rect x="-8" y="-5" width="9" height="10" rx="1.5" fill="#6b7280"/>` +
+              `<circle cx="8" cy="0" r="3.2" fill="#ffd24a"/></g>`;
+function placeTrain(path, train, at) {
+  const len = path.getTotalLength();
+  const a = path.getPointAtLength(at), p = path.getPointAtLength(Math.max(0, at - 1)), q = path.getPointAtLength(Math.min(len, at + 1));
+  train.setAttribute('transform', `translate(${a.x},${a.y}) rotate(${Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI})`);
+}
+function runTrain() {
+  const path = board.querySelector('#route'), train = board.querySelector('#train');
+  if (!path || !train || reduceMotion.matches) { if (path && train) placeTrain(path, train, path.getTotalLength()); trainArrived(); return; }
+  const len = path.getTotalLength();
+  const dur = Math.min(3500, Math.max(1500, len * 1.4));
+  path.style.strokeDasharray = len;
+  const t0 = performance.now();
+  const step = now => {
+    const t = Math.min(1, (now - t0) / dur), e = t < .5 ? 2 * t * t : 1 - (2 - 2 * t) ** 2 / 2; // ease in and out
+    path.style.strokeDashoffset = len * (1 - e);
+    placeTrain(path, train, len * e);
+    if (t < 1) animId = requestAnimationFrame(step); else trainArrived();
+  };
+  animId = requestAnimationFrame(step);
+}
+function trainArrived() { animId = null; popNext = true; showResult(); }
+function stopTrain() { if (animId !== null) { cancelAnimationFrame(animId); animId = null; } }
+
 function render() {
   const { w, h } = P;
   const W_ = OX + w * C + 62, H_ = OY + h * C + 32;
@@ -245,13 +330,18 @@ function render() {
     centre.push(trackPath(c, m));
   }
   const stubs = [P.a, P.b].map(portStub);
+  // solved: a green glow under the whole route (revealed by the train as it runs)
+  const routeD = st.solved ? route() : null;
+  if (routeD) out.push(`<path id="route" d="${routeD}" fill="none" stroke="#bfe8cc" stroke-width="${2 * G_ + 16}" stroke-linecap="round" stroke-linejoin="round"/>`);
   const ties = [...centre, ...stubs.map(s => s.d)].join('');
   out.push(`<path d="${ties}" fill="none" stroke="#8a6a48" stroke-width="${2 * G_ + 12}" stroke-dasharray="4 5"/>`);
-  const colors = { given: '#1f2328', player: '#2f5fd0', bad: '#c62828' };
+  const colors = st.solved ? { given: '#1a7f37', player: '#1a7f37', bad: '#c62828' }
+                           : { given: '#1f2328', player: '#2f5fd0', bad: '#c62828' };
   for (const [g, ds] of Object.entries(groups)) {
     const d = ds.join('') + (g === 'given' ? stubs.map(s => s.rails).join('') : '');
     if (d) out.push(`<path d="${d}" fill="none" stroke="${colors[g]}" stroke-width="3.2" stroke-linecap="butt"/>`);
   }
+  if (routeD) out.push(TRAIN);
   // port labels
   for (const [i, s] of stubs.entries()) {
     out.push(`<circle cx="${s.lx}" cy="${s.ly}" r="8" fill="#1f2328"/>`);
@@ -267,7 +357,15 @@ function render() {
     const y = OY + r * C + C / 2 + 6.5;
     out.push(`<text x="${OX + w * C + 44}" y="${y}" font-size="19" font-weight="600" text-anchor="middle" fill="${clue(rowCount[r], P.rows[r])}">${P.rows[r]}</text>`);
   }
+  // A re-render replaces the SVG the running train is drawn in, so end the run first.
+  if (animId !== null) { stopTrain(); popNext = true; }
   board.innerHTML = out.join('');
+  board.classList.toggle('solved', st.solved);
+  document.getElementById('timer').classList.toggle('solved', st.solved);
+  if (routeD) {
+    if (celebrate) { celebrate = false; runTrain(); }
+    else { const p = board.querySelector('#route'); placeTrain(p, board.querySelector('#train'), p.getTotalLength()); }
+  }
 
   // chrome
   document.getElementById('date').textContent = dates[dateIdx];
@@ -295,23 +393,34 @@ function fmt(ms) { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)
 function showTime() { document.getElementById('timer').textContent = fmt(st.time); }
 function resultLine() {
   const s = DATA.slots[slot];
-  return `${dates[dateIdx]} ${s.name} ${s.size}x${s.size}: ${fmt(st.time)}, ${st.checks} check${st.checks === 1 ? '' : 's'}, ${st.undos} undo${st.undos === 1 ? '' : 's'}`;
+  return `${dates[dateIdx]} ${s.name} ${s.size}x${s.size}: ${fmt(st.time)}, ${st.checks} check${st.checks === 1 ? '' : 's'}`;
 }
 function showResult() {
   const box = document.getElementById('result');
-  box.style.display = st.solved ? 'block' : 'none';
-  if (!st.solved) return;
-  document.getElementById('resultHead').textContent = `Solved in ${fmt(st.time)}!`;
+  const show = st.solved && resultOpen && animId === null;
+  box.classList.toggle('show', show);
+  box.classList.toggle('pop', show && popNext);
+  if (show) popNext = false;
+  if (!show) return;
+  const s = DATA.slots[slot];
+  document.getElementById('resultTime').textContent = fmt(st.time);
+  document.getElementById('resultSub').textContent =
+    `${LABEL[s.name] ?? s.name} ${s.size}×${s.size} · ${dates[dateIdx]} · ${st.checks ? `${st.checks} check${st.checks === 1 ? '' : 's'}` : 'no checks'}`;
   document.getElementById('resultText').textContent = resultLine();
+  document.getElementById('resultText').style.display = '';
+  document.getElementById('copy').textContent = 'Copy result';
 }
 function setMsg(t, cls = '') { const m = document.getElementById('msg'); m.textContent = t; m.className = cls; }
 
 function afterChange() {
-  if (P.sol.every((m, c) => mask(c) === m)) {
+  if (!st.solved && P.sol.every((m, c) => mask(c) === m)) {
     st.solved = true;
     st.marks = {};
     flash.clear();
+    clearTimeout(flashTimer); // its re-render would cut the train short
     setMsg('');
+    celebrate = true;
+    resultOpen = true;
   }
   save();
   render();
@@ -332,7 +441,7 @@ function between(a, b) {
   return G.side(Math.min(a, b), S);
 }
 board.addEventListener('pointerdown', ev => {
-  if (st.solved) return;
+  if (st.solved) { if (animId === null) { resultOpen = true; popNext = true; setMsg(''); showResult(); } return; }
   const c = cellAt(ev); if (c < 0) return;
   board.setPointerCapture(ev.pointerId);
   drag = { start: c, last: c, moved: false, mode: null };
@@ -374,7 +483,7 @@ board.addEventListener('pointercancel', () => { drag = null; afterChange(); });
 document.getElementById('undo').onclick = () => {
   const s = undoStack.pop(); if (!s) return;
   const o = JSON.parse(s);
-  st.edges = new Set(o.edges); st.lit = new Set(o.lit); st.marks = o.marks; st.undos++;
+  st.edges = new Set(o.edges); st.lit = new Set(o.lit); st.marks = o.marks;
   afterChange();
 };
 document.getElementById('check').onclick = () => {
@@ -403,7 +512,11 @@ document.getElementById('restart').onclick = ev => {
 };
 document.getElementById('copy').onclick = async ev => {
   try { await navigator.clipboard.writeText(resultLine()); ev.currentTarget.textContent = 'Copied'; }
-  catch { ev.currentTarget.textContent = 'Copy failed — select the text above'; }
+  catch { ev.currentTarget.textContent = 'Copy failed — select the text above'; document.getElementById('resultText').style.display = 'block'; }
+};
+document.getElementById('closeResult').onclick = () => {
+  resultOpen = false; showResult();
+  setMsg('Solved ✓ — tap the board to see your result again', 'good');
 };
 document.getElementById('prev').onclick = () => { if (dateIdx > 0) { dateIdx--; load(); } };
 document.getElementById('next').onclick = () => { if (dateIdx < dates.length - 1) { dateIdx++; load(); } };
