@@ -3,38 +3,45 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>Train Tracks playtest</title>
 <style>
-  :root { color-scheme: light; --ink: #1f2328; --muted: #6b7280; --line: #d0d4da; --accent: #2f5fd0; --good: #1a7f37; --good-soft: #c9ecd4; }
+  :root { color-scheme: light dark; --bg: #f6f7f9; --surface: #fff; --ink: #1f2328; --on-ink: #fff; --muted: #6b7280; --line: #d0d4da;
+          --good: #1a7f37; --good-soft: #c9ecd4; --good-btn: #1a7f37; --bad: #c62828; --scrim: rgba(246, 247, 249, .55); --shadow: rgba(0, 0, 0, .18); }
+  /* Own dark theme, so browsers don't auto-darken the page (which washed out the train). Board colours: PALETTE in the script. */
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1216; --surface: #181c22; --ink: #e6e8eb; --on-ink: #0f1216; --muted: #9aa1ad; --line: #313843;
+            --good: #3fb950; --good-soft: #1d3b27; --good-btn: #238636; --bad: #ff7b72; --scrim: rgba(15, 18, 22, .6); --shadow: rgba(0, 0, 0, .5); }
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: #f6f7f9; }
+  body { margin: 0; font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: var(--bg); }
   main { max-width: 600px; margin: 0 auto; padding: 12px 12px 40px; }
   h1 { font-size: 20px; margin: 4px 0 10px; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-  button { font: inherit; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); cursor: pointer; }
+  button { font: inherit; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); cursor: pointer; }
   button:disabled { opacity: .4; cursor: default; }
-  button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  button.on { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
   #date { font-weight: 600; min-width: 120px; text-align: center; }
   #info { color: var(--muted); font-size: 14px; }
   #timer { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; }
   #boardWrap { position: relative; }
-  #board { width: 100%; display: block; background: #fff; border: 1px solid var(--line); border-radius: 10px; touch-action: none; user-select: none; -webkit-user-select: none; transition: border-color .4s, box-shadow .4s; }
+  #board { width: 100%; display: block; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; touch-action: none; user-select: none; -webkit-user-select: none; transition: border-color .4s, box-shadow .4s; }
   #board.solved { border-color: var(--good); box-shadow: 0 0 0 3px var(--good-soft); }
   #timer.solved { color: var(--good); }
   #msg { min-height: 24px; margin: 8px 0; font-weight: 600; }
   #msg.good { color: var(--good); }
-  #msg.bad { color: #c62828; }
+  #msg.bad { color: var(--bad); }
   /* Solved card: floats over the board once the train reaches B. */
-  #result { display: none; position: absolute; inset: 0; align-items: center; justify-content: center; padding: 16px; border-radius: 10px; background: rgba(246, 247, 249, .55); }
+  #result { display: none; position: absolute; inset: 0; align-items: center; justify-content: center; padding: 16px; border-radius: 10px; background: var(--scrim); }
   #result.show { display: flex; }
   #result.pop .card { animation: pop .35s cubic-bezier(.2, 1.4, .4, 1) both; }
-  #result .card { background: #fff; border: 2px solid var(--good); border-radius: 14px; padding: 18px 20px 16px; text-align: center; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); max-width: 320px; width: 100%; }
+  #result .card { background: var(--surface); border: 2px solid var(--good); border-radius: 14px; padding: 18px 20px 16px; text-align: center; box-shadow: 0 10px 30px var(--shadow); max-width: 320px; width: 100%; }
   #resultHead { font-size: 28px; font-weight: 800; color: var(--good); }
   #resultTime { font-size: 40px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; margin: 2px 0 4px; }
   #resultSub { color: var(--muted); font-size: 14px; margin-bottom: 10px; }
   #result code { display: none; margin: 0 0 12px; user-select: all; -webkit-user-select: all; font-size: 13px; color: var(--muted); }
   #result .row { justify-content: center; margin: 0; }
-  #copy { background: var(--good); border-color: var(--good); color: #fff; font-weight: 600; }
+  #copy { background: var(--good-btn); border-color: var(--good-btn); color: #fff; font-weight: 600; }
   @keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { #result.pop .card { animation: none; } }
   .help { color: var(--muted); font-size: 14px; }
@@ -78,7 +85,7 @@
   </div>
   <p class="help">
     <b>Goal:</b> lay one track from A to B. The numbers say how many squares in each row and column have track.
-    Track never crosses or branches. Dark pieces are given.<br>
+    Track never crosses or branches. Pieces on shaded squares are given.<br>
     <b>Drag</b> from square to square to lay track; drag along existing track to remove it.
     <b>Tap</b> a square to mark it: • (track here), then ✕ (no track), then clear.
   </p>
@@ -120,6 +127,20 @@ let animId = null;       // requestAnimationFrame id while the train is running
 let resultOpen = false;  // result card wanted (hidden while the train is still running)
 let popNext = false;     // animate the card's entrance on its next showing
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+// Board colours for each theme (the page chrome uses the CSS variables at the top).
+const PALETTE = {
+  light: { cell: '#fff', given: '#eef0f3', flash: '#ffd6d6', grid: '#c9ced6', frame: '#5b6270', cross: '#9aa1ad', dot: '#3b4252',
+           ties: '#8a6a48', railGiven: '#1f2328', railPlayer: '#2f5fd0', bad: '#c62828', solved: '#1a7f37', glow: '#bfe8cc',
+           port: '#1f2328', portText: '#fff', clue: '#1f2328', clueDone: '#a3a9b3',
+           trainBody: '#1f2328', trainWindow: '#6b7280', lamp: '#ffd24a' },
+  dark:  { cell: '#181c22', given: '#262c35', flash: '#5c2626', grid: '#2f3640', frame: '#8a93a3', cross: '#6b7280', dot: '#d0d4da',
+           ties: '#7a5a3c', railGiven: '#e6e8eb', railPlayer: '#6ea8ff', bad: '#ff7b72', solved: '#3fb950', glow: '#1d4a2a',
+           port: '#e6e8eb', portText: '#0f1216', clue: '#e6e8eb', clueDone: '#5b6270',
+           trainBody: '#f0f2f5', trainWindow: '#4b5563', lamp: '#ffd24a' },
+};
+const darkMode = matchMedia('(prefers-color-scheme: dark)');
+let K = darkMode.matches ? PALETTE.dark : PALETTE.light;
+darkMode.addEventListener('change', () => { K = darkMode.matches ? PALETTE.dark : PALETTE.light; if (P) render(); });
 
 const store = {
   get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
@@ -269,9 +290,9 @@ function route() {
   }
   return null; // not a single A→B path; skip the train rather than draw nonsense
 }
-const TRAIN = `<g id="train"><rect x="-12" y="-8" width="24" height="16" rx="4" fill="#1f2328"/>` +
-              `<rect x="-8" y="-5" width="9" height="10" rx="1.5" fill="#6b7280"/>` +
-              `<circle cx="8" cy="0" r="3.2" fill="#ffd24a"/></g>`;
+const train = () => `<g id="train"><rect x="-12" y="-8" width="24" height="16" rx="4" fill="${K.trainBody}"/>` +
+                    `<rect x="-8" y="-5" width="9" height="10" rx="1.5" fill="${K.trainWindow}"/>` +
+                    `<circle cx="8" cy="0" r="3.2" fill="${K.lamp}"/></g>`;
 function placeTrain(path, train, at) {
   const len = path.getTotalLength();
   const a = path.getPointAtLength(at), p = path.getPointAtLength(Math.max(0, at - 1)), q = path.getPointAtLength(Math.min(len, at + 1));
@@ -310,16 +331,16 @@ function render() {
   // cells
   for (let c = 0; c < w * h; c++) {
     const x = OX + (c % w) * C, y = OY + Math.floor(c / w) * C;
-    const fill = flash.has(c) ? '#ffd6d6' : P.hints[c] !== undefined ? '#eef0f3' : '#fff';
-    out.push(`<rect x="${x}" y="${y}" width="${C}" height="${C}" fill="${fill}" stroke="#c9ced6" stroke-width="1"/>`);
+    const fill = flash.has(c) ? K.flash : P.hints[c] !== undefined ? K.given : K.cell;
+    out.push(`<rect x="${x}" y="${y}" width="${C}" height="${C}" fill="${fill}" stroke="${K.grid}" stroke-width="1"/>`);
   }
-  out.push(`<rect x="${OX}" y="${OY}" width="${w * C}" height="${h * C}" fill="none" stroke="#5b6270" stroke-width="2"/>`);
+  out.push(`<rect x="${OX}" y="${OY}" width="${w * C}" height="${h * C}" fill="none" stroke="${K.frame}" stroke-width="2"/>`);
   // marks
   for (const [cs, v] of Object.entries(st.marks)) {
     const c = +cs; if (masks[c]) continue;
     const x = OX + (c % w) * C + C / 2, y = OY + Math.floor(c / w) * C + C / 2;
-    if (v === 1) out.push(`<path d="M${x - 8},${y - 8}l16,16M${x + 8},${y - 8}l-16,16" stroke="#9aa1ad" stroke-width="2.5" stroke-linecap="round"/>`);
-    else out.push(`<circle cx="${x}" cy="${y}" r="5" fill="${'#3b4252'}"/>`);
+    if (v === 1) out.push(`<path d="M${x - 8},${y - 8}l16,16M${x + 8},${y - 8}l-16,16" stroke="${K.cross}" stroke-width="2.5" stroke-linecap="round"/>`);
+    else out.push(`<circle cx="${x}" cy="${y}" r="5" fill="${K.dot}"/>`);
   }
   // track: wooden ties along the centre line, then two thin rails on top
   const groups = { given: [], player: [], bad: [] }, centre = [];
@@ -332,23 +353,23 @@ function render() {
   const stubs = [P.a, P.b].map(portStub);
   // solved: a green glow under the whole route (revealed by the train as it runs)
   const routeD = st.solved ? route() : null;
-  if (routeD) out.push(`<path id="route" d="${routeD}" fill="none" stroke="#bfe8cc" stroke-width="${2 * G_ + 16}" stroke-linecap="round" stroke-linejoin="round"/>`);
+  if (routeD) out.push(`<path id="route" d="${routeD}" fill="none" stroke="${K.glow}" stroke-width="${2 * G_ + 16}" stroke-linecap="round" stroke-linejoin="round"/>`);
   const ties = [...centre, ...stubs.map(s => s.d)].join('');
-  out.push(`<path d="${ties}" fill="none" stroke="#8a6a48" stroke-width="${2 * G_ + 12}" stroke-dasharray="4 5"/>`);
-  const colors = st.solved ? { given: '#1a7f37', player: '#1a7f37', bad: '#c62828' }
-                           : { given: '#1f2328', player: '#2f5fd0', bad: '#c62828' };
+  out.push(`<path d="${ties}" fill="none" stroke="${K.ties}" stroke-width="${2 * G_ + 12}" stroke-dasharray="4 5"/>`);
+  const colors = st.solved ? { given: K.solved, player: K.solved, bad: K.bad }
+                           : { given: K.railGiven, player: K.railPlayer, bad: K.bad };
   for (const [g, ds] of Object.entries(groups)) {
     const d = ds.join('') + (g === 'given' ? stubs.map(s => s.rails).join('') : '');
     if (d) out.push(`<path d="${d}" fill="none" stroke="${colors[g]}" stroke-width="3.2" stroke-linecap="butt"/>`);
   }
-  if (routeD) out.push(TRAIN);
+  if (routeD) out.push(train());
   // port labels
   for (const [i, s] of stubs.entries()) {
-    out.push(`<circle cx="${s.lx}" cy="${s.ly}" r="8" fill="#1f2328"/>`);
-    out.push(`<text x="${s.lx}" y="${s.ly + 4}" font-size="11.5" font-weight="700" fill="#fff" text-anchor="middle">${'AB'[i]}</text>`);
+    out.push(`<circle cx="${s.lx}" cy="${s.ly}" r="8" fill="${K.port}"/>`);
+    out.push(`<text x="${s.lx}" y="${s.ly + 4}" font-size="11.5" font-weight="700" fill="${K.portText}" text-anchor="middle">${'AB'[i]}</text>`);
   }
   // clues: columns on top, rows on the right
-  const clue = (have, want) => have === want ? '#a3a9b3' : have > want ? '#c62828' : '#1f2328';
+  const clue = (have, want) => have === want ? K.clueDone : have > want ? K.bad : K.clue;
   for (let q = 0; q < w; q++) {
     const x = OX + q * C + C / 2;
     out.push(`<text x="${x}" y="${OY - 36}" font-size="19" font-weight="600" text-anchor="middle" fill="${clue(colCount[q], P.cols[q])}">${P.cols[q]}</text>`);
@@ -393,7 +414,10 @@ function fmt(ms) { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)
 function showTime() { document.getElementById('timer').textContent = fmt(st.time); }
 function resultLine() {
   const s = DATA.slots[slot];
-  return `${dates[dateIdx]} ${s.name} ${s.size}x${s.size}: ${fmt(st.time)}, ${st.checks} check${st.checks === 1 ? '' : 's'}`;
+  // Shared out of context (a chat, say), so lead with the game and end with where to play it.
+  const where = /^https?:$/.test(location.protocol) ? `\n${location.origin}${location.pathname.replace(/index\.html$/, '')}` : '';
+  return `Train Tracks ${dates[dateIdx]} · ${LABEL[s.name] ?? s.name} ${s.size}×${s.size} · ${fmt(st.time)}, ` +
+         `${st.checks} check${st.checks === 1 ? '' : 's'}${where}`;
 }
 function showResult() {
   const box = document.getElementById('result');
