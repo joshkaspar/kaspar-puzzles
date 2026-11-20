@@ -7,11 +7,11 @@
 <title>Train Tracks playtest</title>
 <style>
   :root { color-scheme: light dark; --bg: #f6f7f9; --surface: #fff; --ink: #1f2328; --on-ink: #fff; --muted: #6b7280; --line: #d0d4da;
-          --good: #1a7f37; --good-soft: #c9ecd4; --good-btn: #1a7f37; --bad: #c62828; --scrim: rgba(246, 247, 249, .55); --shadow: rgba(0, 0, 0, .18); }
+          --good: #1a7f37; --good-soft: #c9ecd4; --good-btn: #1a7f37; --bad: #c62828; --hl: #2f5fd0; --on-hl: #fff; --scrim: rgba(246, 247, 249, .55); --shadow: rgba(0, 0, 0, .18); }
   /* Own dark theme, so browsers don't auto-darken the page (which washed out the train). Board colours: PALETTE in the script. */
   @media (prefers-color-scheme: dark) {
     :root { --bg: #0f1216; --surface: #181c22; --ink: #e6e8eb; --on-ink: #0f1216; --muted: #9aa1ad; --line: #313843;
-            --good: #3fb950; --good-soft: #1d3b27; --good-btn: #238636; --bad: #ff7b72; --scrim: rgba(15, 18, 22, .6); --shadow: rgba(0, 0, 0, .5); }
+            --good: #3fb950; --good-soft: #1d3b27; --good-btn: #238636; --bad: #ff7b72; --hl: #6ea8ff; --on-hl: #0f1216; --scrim: rgba(15, 18, 22, .6); --shadow: rgba(0, 0, 0, .5); }
   }
   * { box-sizing: border-box; }
   body { margin: 0; font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: var(--bg); }
@@ -44,6 +44,18 @@
   #copy { background: var(--good-btn); border-color: var(--good-btn); color: #fff; font-weight: 600; }
   @keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { #result.pop .card { animation: none; } }
+  /* Tutorial: a coach box above a small practice board; the daily-puzzle chrome is hidden. */
+  #coach { display: none; background: var(--surface); border: 2px solid var(--hl); border-radius: 12px; padding: 10px 14px 12px; margin-bottom: 10px; }
+  body.tut #coach { display: block; }
+  body.tut .notut { display: none; }
+  body.tut #boardWrap { max-width: 420px; margin: 0 auto; }
+  #coachTop { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 13px; margin-bottom: 4px; }
+  #coachText { font-size: 17px; }
+  #coachNext { margin-top: 10px; background: var(--hl); border-color: var(--hl); color: var(--on-hl); font-weight: 600; }
+  #coachNext[hidden] { display: none; }
+  #board .pulse { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .2; } }
+  @media (prefers-reduced-motion: reduce) { #board .pulse { animation: none; } }
   .help { color: var(--muted); font-size: 14px; }
   .help b { color: var(--ink); }
 </style>
@@ -51,16 +63,22 @@
 <body>
 <main>
   <h1>Train Tracks playtest</h1>
-  <div class="row">
+  <div class="row notut">
     <button id="prev" aria-label="Previous day">◀</button>
     <span id="date"></span>
     <button id="next" aria-label="Next day">▶</button>
     <button id="today">Today</button>
+    <button id="howto">How to play</button>
   </div>
-  <div class="row" id="tabs"></div>
-  <div class="row">
+  <div class="row notut" id="tabs"></div>
+  <div class="row notut">
     <span id="info"></span>
     <span id="timer">0:00</span>
+  </div>
+  <div id="coach" role="region" aria-label="Tutorial">
+    <div id="coachTop"><span id="coachStep"></span><button id="skipTut">Skip tutorial</button></div>
+    <div id="coachText" aria-live="polite"></div>
+    <button id="coachNext" hidden></button>
   </div>
   <div id="boardWrap">
     <svg id="board"></svg>
@@ -132,11 +150,11 @@ const PALETTE = {
   light: { cell: '#fff', given: '#eef0f3', flash: '#ffd6d6', grid: '#c9ced6', frame: '#5b6270', cross: '#9aa1ad', dot: '#3b4252',
            ties: '#8a6a48', railGiven: '#1f2328', railPlayer: '#2f5fd0', bad: '#c62828', solved: '#1a7f37', glow: '#bfe8cc',
            port: '#1f2328', portText: '#fff', clue: '#1f2328', clueDone: '#a3a9b3',
-           trainBody: '#1f2328', trainWindow: '#6b7280', lamp: '#ffd24a' },
+           trainBody: '#1f2328', trainWindow: '#6b7280', lamp: '#ffd24a', hl: '#2f5fd0' },
   dark:  { cell: '#181c22', given: '#262c35', flash: '#5c2626', grid: '#2f3640', frame: '#8a93a3', cross: '#6b7280', dot: '#d0d4da',
            ties: '#7a5a3c', railGiven: '#e6e8eb', railPlayer: '#6ea8ff', bad: '#ff7b72', solved: '#3fb950', glow: '#1d4a2a',
            port: '#e6e8eb', portText: '#0f1216', clue: '#e6e8eb', clueDone: '#5b6270',
-           trainBody: '#f0f2f5', trainWindow: '#4b5563', lamp: '#ffd24a' },
+           trainBody: '#f0f2f5', trainWindow: '#4b5563', lamp: '#ffd24a', hl: '#6ea8ff' },
 };
 const darkMode = matchMedia('(prefers-color-scheme: dark)');
 let K = darkMode.matches ? PALETTE.dark : PALETTE.light;
@@ -148,6 +166,92 @@ const store = {
   del(k) { try { localStorage.removeItem(k); } catch {} },
 };
 const key = (d = dates[dateIdx], s = slot) => `tracks-play:v${DATA.version}:${d}:${DATA.slots[s].name}`;
+
+// --------------------------------------------------------- tutorial ----
+// A hand-made 4×4 puzzle, played step by step with a coach box above it. Each step
+// says what to do, highlights where, and moves on by itself once it's been done
+// (or on a Next button for steps that only explain). Shown once automatically,
+// and again from "How to play".
+//   A → (1,0) → (1,1) → (2,1) → (2,2)* → (2,3) → (3,3) → B      * given piece
+// The clues force that route, so the practice puzzle has exactly one answer. The
+// given piece sits mid-route, so joining it still leaves track to lay before B.
+const TUT = { enc: '4x4:10W.33S:0231:1212:22a', sol: '0000ac0003ac0005' };
+const TUT_SEEN = 'tracks-tutorial:seen';
+const at = (r, q) => r * 4 + q; // cell index on the 4×4 practice board
+let tut = null; // { step } while the tutorial is running
+const STRAY = () => between(at(1, 1), at(1, 2)); // the wrong piece step 5 puts down
+const STEPS = [
+  { text: 'Welcome to Train Tracks! Your job: lay one track that takes the train from <b>A</b> to <b>B</b>.',
+    next: "Let's go", hl: { ports: [0, 1] } },
+  { text: 'Drag from the square next to <b>A</b> into the square beside it.',
+    hl: { cells: [at(1, 0), at(1, 1)], finger: [at(1, 0), at(1, 1)] },
+    done: () => st.edges.has(between(at(1, 0), at(1, 1))) },
+  { text: 'The numbers say how many squares in each row and column have track. This row needs <b>2</b> and now has 2, so its number turns grey.',
+    next: 'Got it', hl: { rows: [1] } },
+  { text: 'The top row needs <b>0</b>, so no track goes there. Tap a square in it twice to mark it ✕.<br>(One tap gives •, meaning “track goes here”.)',
+    hl: { cells: [at(0, 0), at(0, 1), at(0, 2), at(0, 3)], rows: [0] },
+    done: () => [0, 1, 2, 3].some(c => st.marks[c] === 1) },
+  { text: 'Uh-oh, a wrong piece! A <b>red</b> number means too much track in that row or column. Drag along the wrong piece to remove it.',
+    hl: { cells: [at(1, 1), at(1, 2)], rows: [1] },
+    enter: () => { if (!st.solved) st.edges.add(STRAY()); },
+    done: () => !st.edges.has(STRAY()) },
+  { text: 'A shaded square holds a <b>given piece</b>: your track must use it. Drag your track down to join this one.',
+    hl: { cells: [at(2, 2)] },
+    done: () => (shown(at(2, 1)) & E) !== 0 },
+  { text: 'Now finish the track to <b>B</b>. When every number is grey, you’re done.',
+    hl: { ports: [1] } },
+];
+
+function startTutorial() {
+  tut = { step: 0 };
+  document.body.classList.add('tut');
+  load();
+}
+function endTutorial() {
+  store.set(TUT_SEEN, 1);
+  tut = null;
+  document.body.classList.remove('tut');
+  dateIdx = Math.max(0, dates.indexOf(todayStr)); slot = 0;
+  load();
+}
+// Move past every step that's already done (a quick player may get ahead of the
+// coach); solving jumps straight to the end.
+function tutAdvance() {
+  const last = STEPS.length - 1;
+  if (st.solved) { tut.step = last; return; }
+  while (tut.step < last && STEPS[tut.step].done?.()) {
+    tut.step++;
+    STEPS[tut.step].enter?.();
+  }
+}
+function renderCoach() {
+  if (!tut) return;
+  const s = STEPS[tut.step];
+  document.getElementById('coachStep').textContent = `Step ${tut.step + 1} of ${STEPS.length}`;
+  document.getElementById('coachText').innerHTML = st.solved ? 'Nice — the train made it!' : s.text;
+  const nb = document.getElementById('coachNext');
+  nb.hidden = !s.next || st.solved;
+  nb.textContent = s.next ?? '';
+  document.getElementById('skipTut').style.visibility = st.solved ? 'hidden' : ''; // the card's button takes over
+}
+// Pulsing outlines (and a ghost finger) drawn over the board for the current step.
+function tutOverlay(stubs) {
+  if (!tut || st.solved) return [];
+  const hl = STEPS[tut.step].hl ?? {}, out = [], cls = 'class="pulse" fill="none" stroke="' + K.hl + '" stroke-width="3"';
+  for (const c of hl.cells ?? []) {
+    out.push(`<rect ${cls} x="${OX + (c % P.w) * C + 2}" y="${OY + Math.floor(c / P.w) * C + 2}" width="${C - 4}" height="${C - 4}" rx="6"/>`);
+  }
+  for (const r of hl.rows ?? []) out.push(`<circle ${cls} cx="${OX + P.w * C + 44}" cy="${OY + r * C + C / 2}" r="15"/>`);
+  for (const i of hl.ports ?? []) out.push(`<circle ${cls} cx="${stubs[i].lx}" cy="${stubs[i].ly}" r="10.5"/>`); // small enough not to clip at the board's edge
+  if (hl.finger && !reduceMotion.matches) {
+    const [a, b] = hl.finger.map(c => [OX + (c % P.w) * C + C / 2, OY + Math.floor(c / P.w) * C + C / 2]);
+    out.push(`<circle r="11" fill="${K.hl}" opacity="0" pointer-events="none">` +
+             `<animate attributeName="cx" values="${a[0]};${a[0]};${b[0]};${b[0]}" keyTimes="0;.2;.7;1" dur="1.8s" repeatCount="indefinite"/>` +
+             `<animate attributeName="cy" values="${a[1]};${a[1]};${b[1]};${b[1]}" keyTimes="0;.2;.7;1" dur="1.8s" repeatCount="indefinite"/>` +
+             `<animate attributeName="opacity" values="0;.55;.55;0" keyTimes="0;.2;.7;1" dur="1.8s" repeatCount="indefinite"/></circle>`);
+  }
+  return out;
+}
 
 function geometry(p) {
   const { w, h } = p, hBase = h * (w + 1);
@@ -162,10 +266,10 @@ function geometry(p) {
 }
 
 function load() {
-  const [enc, sol] = DATA.puzzles[dates[dateIdx]][slot];
+  const [enc, sol] = tut ? [TUT.enc, TUT.sol] : DATA.puzzles[dates[dateIdx]][slot];
   P = decode(enc, sol);
   G = geometry(P);
-  const saved = store.get(key());
+  const saved = tut ? null : store.get(key()); // the practice board always starts fresh
   st = saved ? { ...saved, edges: new Set(saved.edges), lit: new Set(saved.lit ?? []) }
              : { edges: new Set(), lit: new Set(), marks: {}, time: 0, solved: false, checks: 0 };
   delete st.undos; // older saves counted undos; no longer tracked
@@ -180,7 +284,7 @@ function load() {
   render();
 }
 
-function save() { store.set(key(), { ...st, edges: [...st.edges], lit: [...st.lit] }); }
+function save() { if (tut) return; store.set(key(),{ ...st, edges: [...st.edges], lit: [...st.lit] }); }
 function snapshot() {
   undoStack.push(JSON.stringify({ edges: [...st.edges], lit: [...st.lit], marks: st.marks }));
   if (undoStack.length > 300) undoStack.shift();
@@ -368,6 +472,7 @@ function render() {
     out.push(`<circle cx="${s.lx}" cy="${s.ly}" r="8" fill="${K.port}"/>`);
     out.push(`<text x="${s.lx}" y="${s.ly + 4}" font-size="11.5" font-weight="700" fill="${K.portText}" text-anchor="middle">${'AB'[i]}</text>`);
   }
+  out.push(...tutOverlay(stubs));
   // clues: columns on top, rows on the right
   const clue = (have, want) => have === want ? K.clueDone : have > want ? K.bad : K.clue;
   for (let q = 0; q < w; q++) {
@@ -408,6 +513,7 @@ function render() {
   document.getElementById('check').disabled = st.solved;
   showTime();
   showResult();
+  renderCoach();
 }
 
 function fmt(ms) { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
@@ -426,6 +532,19 @@ function showResult() {
   box.classList.toggle('pop', show && popNext);
   if (show) popNext = false;
   if (!show) return;
+  const head = document.getElementById('resultHead'), time = document.getElementById('resultTime');
+  const sub = document.getElementById('resultSub'), copy = document.getElementById('copy'), close = document.getElementById('closeResult');
+  if (tut) { // the practice puzzle's card sends the player on to the real thing
+    head.textContent = 'You’ve got it!';
+    time.style.display = 'none';
+    sub.textContent = 'That’s the whole game. Stuck on a real puzzle? “Check for mistakes” shows wrong squares in red.';
+    copy.textContent = 'Play today’s puzzle';
+    close.style.display = 'none';
+    return;
+  }
+  head.textContent = 'Solved!';
+  time.style.display = '';
+  close.style.display = '';
   const s = DATA.slots[slot];
   document.getElementById('resultTime').textContent = fmt(st.time);
   document.getElementById('resultSub').textContent =
@@ -446,6 +565,7 @@ function afterChange() {
     celebrate = true;
     resultOpen = true;
   }
+  if (tut) tutAdvance();
   save();
   render();
 }
@@ -532,9 +652,11 @@ document.getElementById('restart').onclick = ev => {
     return;
   }
   clearTimeout(restartArmed); restartArmed = null; btn.textContent = 'Restart';
+  if (tut) { startTutorial(); return; } // never touch the real puzzle's saved progress
   store.del(key()); load();
 };
 document.getElementById('copy').onclick = async ev => {
+  if (tut) { endTutorial(); return; } // in the tutorial this button is "Play today's puzzle"
   try { await navigator.clipboard.writeText(resultLine()); ev.currentTarget.textContent = 'Copied'; }
   catch { ev.currentTarget.textContent = 'Copy failed — select the text above'; document.getElementById('resultText').style.display = 'block'; }
 };
@@ -545,19 +667,28 @@ document.getElementById('closeResult').onclick = () => {
 document.getElementById('prev').onclick = () => { if (dateIdx > 0) { dateIdx--; load(); } };
 document.getElementById('next').onclick = () => { if (dateIdx < dates.length - 1) { dateIdx++; load(); } };
 document.getElementById('today').onclick = () => { dateIdx = Math.max(0, dates.indexOf(todayStr)); load(); };
+document.getElementById('howto').onclick = startTutorial;
+document.getElementById('skipTut').onclick = endTutorial;
+document.getElementById('coachNext').onclick = () => {
+  tut.step = Math.min(tut.step + 1, STEPS.length - 1);
+  STEPS[tut.step].enter?.();
+  tutAdvance(); // the next step may already be done
+  render();
+};
 
 // timer: runs while the page is visible and the puzzle unsolved
 let lastTick = performance.now();
 setInterval(() => {
   const now = performance.now(), dt = now - lastTick; lastTick = now;
-  if (document.hidden || !st || st.solved) return;
+  if (document.hidden || !st || st.solved || tut) return;
   st.time += Math.min(dt, 2000);
   showTime();
   if (Math.floor(st.time / 1000) % 5 === 0) save();
 }, 1000);
 document.addEventListener('visibilitychange', () => { lastTick = performance.now(); if (st) save(); });
 
-load();
+// First visit: start with the tutorial. Finishing or skipping it marks it seen.
+if (store.get(TUT_SEEN)) load(); else startTutorial();
 </script>
 </body>
 </html>
