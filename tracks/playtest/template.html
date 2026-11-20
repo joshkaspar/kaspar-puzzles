@@ -105,7 +105,8 @@
     <b>Goal:</b> lay one track from A to B. The numbers say how many squares in each row and column have track.
     Track never crosses or branches. Pieces on shaded squares are given.<br>
     <b>Drag</b> from square to square to lay track; drag along existing track to remove it.
-    <b>Tap</b> a square to mark it: • (track here), then ✕ (no track), then clear.
+    <b>Tap</b> a square to mark it: • (track here), then ✕ (no track), then clear.<br>
+    <b>Tip:</b> dot the squares that must have track, cross off the ones that can’t, then draw.
   </p>
 </main>
 <script>
@@ -173,33 +174,44 @@ const key = (d = dates[dateIdx], s = slot) => `tracks-play:v${DATA.version}:${d}
 // (or on a Next button for steps that only explain). Shown once automatically,
 // and again from "How to play".
 //   A → (1,0) → (1,1) → (2,1) → (2,2)* → (2,3) → (3,3) → B      * given piece
-// The clues force that route, so the practice puzzle has exactly one answer. The
-// given piece sits mid-route, so joining it still leaves track to lay before B.
+// It teaches the way to solve, not just the controls: first dot squares that
+// must have track, then cross off squares that can't, and only then draw. On
+// this board dots and crosses alone find every track square, so drawing is the
+// last step. The clues force that route, so there's exactly one answer.
 const TUT = { enc: '4x4:10W.33S:0231:1212:22a', sol: '0000ac0003ac0005' };
 const TUT_SEEN = 'tracks-tutorial:seen';
 const at = (r, q) => r * 4 + q; // cell index on the 4×4 practice board
 let tut = null; // { step } while the tutorial is running
-const STRAY = () => between(at(1, 1), at(1, 2)); // the wrong piece step 5 puts down
+const dotted = (...cs) => cs.every(c => st.marks[c] === 2 || shown(c));    // • (or already drawn)
+const crossed = (...cs) => cs.every(c => st.marks[c] === 1);               // ✕
 const STEPS = [
-  { text: 'Welcome to Train Tracks! Your job: lay one track that takes the train from <b>A</b> to <b>B</b>.',
+  { text: 'Welcome to Train Tracks! Lay one track that takes the train from <b>A</b> to <b>B</b>. ' +
+          'The numbers say how many squares in each row and column the track passes through.',
     next: "Let's go", hl: { ports: [0, 1] } },
-  { text: 'Drag from the square next to <b>A</b> into the square beside it.',
-    hl: { cells: [at(1, 0), at(1, 1)], finger: [at(1, 0), at(1, 1)] },
-    done: () => st.edges.has(between(at(1, 0), at(1, 1))) },
-  { text: 'The numbers say how many squares in each row and column have track. This row needs <b>2</b> and now has 2, so its number turns grey.',
-    next: 'Got it', hl: { rows: [1] } },
-  { text: 'The top row needs <b>0</b>, so no track goes there. Tap a square in it twice to mark it ✕.<br>(One tap gives •, meaning “track goes here”.)',
+  { text: 'Don’t start by drawing. Solve in three passes:<br><b>1.</b> Dot the squares that <i>must</i> have track.<br>' +
+          '<b>2.</b> Cross off the squares that <i>can’t</i>.<br><b>3.</b> Then draw the track.',
+    next: 'Show me' },
+  { text: '<b>Pass 1: dots.</b> The track has to use the squares next to <b>A</b> and <b>B</b>. Tap each one once to mark it •.',
+    hl: { cells: [at(1, 0), at(3, 3)] },
+    done: () => dotted(at(1, 0), at(3, 3)) },
+  { text: 'This shaded square holds a <b>given piece</b> running left to right, so the squares on both sides of it have track too. Dot them.',
+    hl: { cells: [at(2, 1), at(2, 3)] },
+    done: () => dotted(at(2, 1), at(2, 3)) },
+  { text: '<b>Pass 2: crosses.</b> The top row needs <b>0</b>. Tap a square twice to get ✕, and cross off the whole row.',
     hl: { cells: [at(0, 0), at(0, 1), at(0, 2), at(0, 3)], rows: [0] },
-    done: () => [0, 1, 2, 3].some(c => st.marks[c] === 1) },
-  { text: 'Uh-oh, a wrong piece! A <b>red</b> number means too much track in that row or column. Drag along the wrong piece to remove it.',
-    hl: { cells: [at(1, 1), at(1, 2)], rows: [1] },
-    enter: () => { if (!st.solved) st.edges.add(STRAY()); },
-    done: () => !st.edges.has(STRAY()) },
-  { text: 'A shaded square holds a <b>given piece</b>: your track must use it. Drag your track down to join this one.',
-    hl: { cells: [at(2, 2)] },
-    done: () => (shown(at(2, 1)) & E) !== 0 },
-  { text: 'Now finish the track to <b>B</b>. When every number is grey, you’re done.',
-    hl: { ports: [1] } },
+    done: () => crossed(at(0, 0), at(0, 1), at(0, 2), at(0, 3)) },
+  { text: 'The bottom row needs <b>1</b>, and B’s square already has its dot. A grey number means that row is full, so cross off the rest of it.',
+    hl: { cells: [at(3, 0), at(3, 1), at(3, 2)], rows: [3] },
+    done: () => crossed(at(3, 0), at(3, 1), at(3, 2)) },
+  { text: 'Columns work the same way. These two are already full (grey), so cross off their empty squares.',
+    hl: { cells: [at(1, 2), at(1, 3)], cols: [2, 3] },
+    done: () => crossed(at(1, 2), at(1, 3)) },
+  { text: 'Now think: this row needs <b>2</b>. It has one dot, and only one square left that could take track. Dot it.',
+    hl: { rows: [1] },
+    done: () => dotted(at(1, 1)) },
+  { text: '<b>Pass 3: draw.</b> Every track square is dotted now. Drag from <b>A</b> through the dots to <b>B</b>.<br>' +
+          '(Went wrong? Drag back along your track to remove it.)',
+    hl: { ports: [0, 1], finger: [at(1, 0), at(1, 1)] } },
 ];
 
 function startTutorial() {
@@ -242,6 +254,7 @@ function tutOverlay(stubs) {
     out.push(`<rect ${cls} x="${OX + (c % P.w) * C + 2}" y="${OY + Math.floor(c / P.w) * C + 2}" width="${C - 4}" height="${C - 4}" rx="6"/>`);
   }
   for (const r of hl.rows ?? []) out.push(`<circle ${cls} cx="${OX + P.w * C + 44}" cy="${OY + r * C + C / 2}" r="15"/>`);
+  for (const q of hl.cols ?? []) out.push(`<circle ${cls} cx="${OX + q * C + C / 2}" cy="${OY - 43}" r="15"/>`);
   for (const i of hl.ports ?? []) out.push(`<circle ${cls} cx="${stubs[i].lx}" cy="${stubs[i].ly}" r="10.5"/>`); // small enough not to clip at the board's edge
   if (hl.finger && !reduceMotion.matches) {
     const [a, b] = hl.finger.map(c => [OX + (c % P.w) * C + C / 2, OY + Math.floor(c / P.w) * C + C / 2]);
@@ -537,7 +550,7 @@ function showResult() {
   if (tut) { // the practice puzzle's card sends the player on to the real thing
     head.textContent = 'You’ve got it!';
     time.style.display = 'none';
-    sub.textContent = 'That’s the whole game. Stuck on a real puzzle? “Check for mistakes” shows wrong squares in red.';
+    sub.textContent = 'Remember: dots, then crosses, then draw. Stuck on a real puzzle? “Check for mistakes” shows wrong squares in red.';
     copy.textContent = 'Play today’s puzzle';
     close.style.display = 'none';
     return;
