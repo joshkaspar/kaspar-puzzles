@@ -18,6 +18,7 @@ built and how to work on it.
 | `bin/pregen.dart` | Writes `build/rack_daily.json`: 365 seeded days. |
 | `bin/play.dart` | Text-mode game for playtesting. |
 | `bin/bot.dart`, `bin/stats.dart` | The bot plays one day (prints its moves), or N random days (balance numbers). |
+| `bin/best.dart` | Beam search for a strong game on one day (`--width=300` takes about a minute). Not proven optimal. |
 | `page/main.dart` | Compiles the engine to JS and exposes `rackView(dayJson, movesJson)`. |
 | `page/template.html` | The page: HTML/SVG art, layout, input, result screen and Web Audio. |
 | `bin/page.dart` | Inlines the compiled engine and the data into the template. |
