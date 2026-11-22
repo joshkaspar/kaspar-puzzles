@@ -31,7 +31,9 @@ jobs:
 
       # Train Tracks has no test suite: check the solver against brute force.
       - name: Train Tracks solver soundness
-        run: cd tracks && dart run bin/fuzz.dart 3000 | tee /dev/stderr | grep -q 'unsound deductions: 0$'
+        run: |
+          cd tracks
+          dart run bin/fuzz.dart 3000 | tee /dev/stderr | grep -q 'unsound deductions: 0$'
 
       - name: Committed pages match their sources
         run: git diff --exit-code --stat site/
