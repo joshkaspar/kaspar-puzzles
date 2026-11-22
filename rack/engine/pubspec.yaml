@@ -1,0 +1,7 @@
+name: rack_engine
+description: Rack & Resonance game engine (board, patterns, building, scoring, day generator). Pure Dart.
+publish_to: none
+environment:
+  sdk: ^3.5.0
+dev_dependencies:
+  test: ^1.25.0

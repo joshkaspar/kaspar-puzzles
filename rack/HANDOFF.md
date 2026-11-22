@@ -2,7 +2,7 @@
 
 Rack & Resonance is a single-player daily puzzle. You place parts, one at a time, in a 5×5 modular-synth cabinet. When parts match a module's pattern, you build that module. Modules built on the day's pre-laid cable, between the fixed OSC and OUT jacks, score as part of the signal chain. At the end, the rack plays the sound you built.
 
-This file is the starting point for building it. It records every design decision made so far, the version 1 module pool with rules and patterns, the cable and generator constraints, the art direction, and the planned architecture. Nothing here is implemented yet.
+This file is the starting point for building it. It records every design decision made so far, the version 1 module pool with rules and patterns, the cable and generator constraints, the art direction, and the planned architecture. Version 1 is now built. See [README.md](README.md) for what exists, and for the decisions made while building it.
 
 It is inspired by *Tiny Towns* (Peter McPherson, AEG). Rack & Resonance reuses that game's general mechanics: placing resources on a small grid and swapping a matched pattern for a scoring piece. It does not use Tiny Towns' theme, names, buildings, patterns or rule text. Credit line for the page: **"Inspired by Tiny Towns by Peter McPherson (AEG)."**
 

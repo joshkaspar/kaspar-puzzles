@@ -1,0 +1,8 @@
+name: rack_tools
+description: Rack & Resonance generator CLI, text-mode runner and page builder.
+publish_to: none
+environment:
+  sdk: ^3.5.0
+dependencies:
+  rack_engine:
+    path: engine
