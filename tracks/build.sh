@@ -1,7 +1,7 @@
 #!/bin/sh
 # Regenerates the daily puzzles and the playtest page at web/tracks/index.html,
 # which Flutter's web build copies to /tracks/ in the served site.
-# Usage: tools/tracks/build.sh [--from=YYYY-MM-DD] [--days=N]   (about 3 min per 180 days)
+# Usage: tools/tracks/build.sh [--from=YYYY-MM-DD] [--days=N]   (a few minutes for 365 days)
 set -eu
 cd "$(dirname "$0")"
 mkdir -p build

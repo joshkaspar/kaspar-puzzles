@@ -35,7 +35,7 @@ Rebuilding is only needed when the generator, the page or the date range changes
 The output is committed, so the app's build never runs the generator.
 
 ```sh
-tools/tracks/build.sh                      # 365 days from 2026-11-01, about 2.5 min
+tools/tracks/build.sh                      # 365 days from 2026-11-01, takes a few minutes
 tools/tracks/build.sh --from=2027-11-01    # extra args go to bin/pregen.dart
 ```
 
@@ -46,6 +46,36 @@ Puzzles depend only on the date, the slot and the seed version (`tracks:v4`) in
 `bin/pregen.dart`. Rebuilding the same dates gives the same puzzles, so progress
 saved in the playtest page carries over. Changing the generator or the version
 changes them.
+
+### Changing only the page
+
+`build.sh` needs Dart. If only `playtest/template.html` changed, the page can be rebuilt
+without it: `web/tracks/index.html` is the template with its `/*DATA*/null` marker
+replaced by one line, `const DATA = {...};`. Put that line from the current page into
+the new template. This is what `bin/playtest.dart` does, and the puzzles stay the same.
+
+## The playtest page
+
+Everything is in `playtest/template.html`: one HTML file with inline CSS and JS, no
+libraries.
+
+- **Play:** drag between squares to lay track, drag back along it to remove it, tap to
+  mark a square • (track) then ✕ (no track). Undo, Check for mistakes (flashes wrong
+  squares red) and Restart (asks twice).
+- **Clues** turn grey when a row or column is complete, red when it has too much.
+- **Solving:** the track turns green, a train runs from A to B, then a card shows the
+  time and number of checks. Copy result gives
+  `Train Tracks <date> · <size> · <time>, <n> checks` plus the page link.
+- **Tutorial:** a 4×4 practice puzzle that teaches the solving order: dot squares that
+  must have track, cross off squares that can't, then draw. It's a list of steps
+  (`STEPS`); each one highlights part of the board and moves on when its `done()` check
+  passes. It opens on the first visit and again from "How to play".
+- **Themes:** light and dark follow the device. Page colours are CSS variables; board
+  colours are in `PALETTE`, because SVG attributes can't use CSS variables. Reduced
+  motion skips the train and the tutorial's ghost finger.
+- **Saved in localStorage**, per browser: `tracks-play:v<version>:<date>:<slot>` holds
+  each puzzle's progress, `tracks-tutorial:seen` that the tutorial was finished or
+  skipped. The practice puzzle is never saved.
 
 ## Tools
 
