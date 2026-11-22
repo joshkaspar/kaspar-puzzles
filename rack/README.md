@@ -22,7 +22,7 @@ built and how to work on it.
 | `page/main.dart` | Compiles the engine to JS and exposes `rackView(dayJson, movesJson)`. |
 | `page/template.html` | The page: HTML/SVG art, layout, input, result screen and Web Audio. |
 | `bin/page.dart` | Inlines the compiled engine and the data into the template. |
-| `build.sh` | Tests, pregen, compile, page. Writes `web/rack/index.html`. |
+| `build.sh` | Tests, pregen, compile, page. Writes `site/rack/index.html`. |
 
 ## Setup and building
 
@@ -30,14 +30,14 @@ This needs only the plain Dart SDK, no Flutter. The SDK is installed at
 `~/.local/share/dart-sdk`, so put `~/.local/share/dart-sdk/bin` on `PATH`.
 
 ```sh
-tools/rack/build.sh               # tests, 365 days from 2026-11-01 (~2 min), engine, page
-tools/rack/build.sh --page-only   # keep the days; recompile the engine and rebuild the page
-cd tools/rack/engine && dart test
-cd tools/rack && dart run bin/play.dart --date=2026-11-22
+rack/build.sh               # tests, 365 days from 2026-11-01 (~2 min), engine, page
+rack/build.sh --page-only   # keep the days; recompile the engine and rebuild the page
+cd rack/engine && dart test
+cd rack && dart run bin/play.dart --date=2026-11-22
 ```
 
-The output `web/rack/index.html` is committed, like Train Tracks, so the Docker build
-never runs Dart. Deploying works the same as Train Tracks (see FORK.md).
+The output `site/rack/index.html` is committed, like Train Tracks, so the Docker build
+never runs Dart. Deploying works the same as Train Tracks (see the top-level README).
 
 Days depend only on the date and the seed version (`rack:v1`) in `bin/pregen.dart`.
 Changing the generator or the version changes them, and that breaks games saved in
@@ -109,4 +109,3 @@ browsers, because saved games are lists of moves.
   in place of the how-to sheet.
 - **Tune the points in playtests.** All the values are in `Points` in `scoring.dart`.
 - **Multiple sources** (an idea for later). Each source jack would get its own `Source`.
-- **Move the games to `kaspar-puzzles`** (see [`../SPLIT-PLAN.md`](../SPLIT-PLAN.md)).

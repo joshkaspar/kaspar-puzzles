@@ -1,8 +1,8 @@
 #!/bin/sh
-# Regenerates the daily patches and the page at web/rack/index.html, which
-# Flutter's web build copies to /rack/ in the served site.
-# Usage: tools/rack/build.sh [--from=YYYY-MM-DD] [--days=N]   (a few minutes for 365 days)
-#        tools/rack/build.sh --page-only    reuse build/rack_daily.json, rebuild engine and page
+# Regenerates the daily patches and the page at site/rack/index.html, which
+# puzzle-docker copies to /rack/ in the served site.
+# Usage: rack/build.sh [--from=YYYY-MM-DD] [--days=N]   (a few minutes for 365 days)
+#        rack/build.sh --page-only    reuse build/rack_daily.json, rebuild engine and page
 set -eu
 cd "$(dirname "$0")"
 mkdir -p build
@@ -14,5 +14,5 @@ else
   dart run bin/pregen.dart --days=365 "$@"
 fi
 dart compile js -O2 --no-source-maps -o build/engine.js page/main.dart >/dev/null
-dart run bin/page.dart build/engine.js build/rack_daily.json ../../web/rack/index.html
-echo "wrote web/rack/index.html"
+dart run bin/page.dart build/engine.js build/rack_daily.json ../site/rack/index.html
+echo "wrote site/rack/index.html"

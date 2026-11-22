@@ -1,6 +1,7 @@
 # Plan: move the games out of the fork
 
-Status: plan only, nothing done yet (2026-11-22).
+Status (2026-11-22): carried out. This repo is the result of phase 1. The paths below
+are the old ones, from the Puzzle fork (`tools/…`, `web/…`).
 
 Train Tracks and Rack & Resonance are their own games. They share nothing with the
 Puzzle app except the hosting: Flutter's web build copies `web/`, so `/tracks/` and

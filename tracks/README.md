@@ -32,15 +32,15 @@ also brute-force checks every 8×8 puzzle.
 ## Building
 
 Rebuilding is only needed when the generator, the page or the date range changes.
-The output is committed, so the app's build never runs the generator.
+The output is committed, so the Docker build never runs the generator.
 
 ```sh
-tools/tracks/build.sh                      # 365 days from 2026-11-01, takes a few minutes
-tools/tracks/build.sh --from=2027-11-01    # extra args go to bin/pregen.dart
+tracks/build.sh                      # 365 days from 2026-11-01, takes a few minutes
+tracks/build.sh --from=2027-11-01    # extra args go to bin/pregen.dart
 ```
 
-The script writes `web/tracks/index.html` (template plus puzzle data). Flutter's web
-build copies it to `build/web/tracks/`.
+The script writes `site/tracks/index.html` (template plus puzzle data). puzzle-docker
+copies `site/` into the served site, so it's at `/tracks/`.
 
 Puzzles depend only on the date, the slot and the seed version (`tracks:v4`) in
 `bin/pregen.dart`. Rebuilding the same dates gives the same puzzles, so progress
@@ -50,7 +50,7 @@ changes them.
 ### Changing only the page
 
 `build.sh` needs Dart. If only `playtest/template.html` changed, the page can be rebuilt
-without it: `web/tracks/index.html` is the template with its `/*DATA*/null` marker
+without it: `site/tracks/index.html` is the template with its `/*DATA*/null` marker
 replaced by one line, `const DATA = {...};`. Put that line from the current page into
 the new template. This is what `bin/playtest.dart` does, and the puzzles stay the same.
 

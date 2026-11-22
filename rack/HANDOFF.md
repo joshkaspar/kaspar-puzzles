@@ -257,26 +257,26 @@ Cords plug into the panel face and drape wherever they need to go, so one jack p
 Everything is in Dart, as one pure engine shared by the generator and the page, so the scoring rules can't drift apart between them.
 
 ```
-tools/rack/
+rack/
   HANDOFF.md            this file
   engine/               pure Dart package: board, parts, patterns (rotations and mirror images),
                         matching, building, cable state, scoring, game-over
     test/               pattern checker (port of reference/check_patterns.py), rule tests
   bin/                  generator CLI: seeded routes, lineups and part orders, screening, pregen
   page/                 template.html (HTML/SVG art and layout) plus Dart compiled with dart compile js
-  build.sh              like tools/tracks/build.sh: pregen, then insert the data, then write web/rack/index.html
+  build.sh              like tracks/build.sh: pregen, then insert the data, then write site/rack/index.html
   reference/            design references (below)
-web/rack/index.html     built page; Flutter's web build copies it to /rack/
+site/rack/index.html    built page; puzzle-docker copies it to /rack/
 ```
 
 - **The page** is a thin HTML/SVG front end, matching the mockups, with the game logic compiled from Dart to JavaScript. Audio uses the browser's Web Audio API through `package:web` and `dart:js_interop`.
 - **Not a Flutter screen.** The layered textures and shadows would need redrawing in Flutter's own painting system. That can come later if the game joins the app's game list.
-- **Deploy** works exactly like Train Tracks: commit to the fork, bump `PUZZLE_REF` and the tag in `puzzle-docker`, then set `PUZZLE_TAG` on zuul and pull.
+- **Deploy** works exactly like Train Tracks: commit here, bump `GAMES_REF` and the tag in `puzzle-docker`, then set `PUZZLE_TAG` on zuul and pull. (Until 2026-11-22 the games lived in the Puzzle fork under `tools/` and `web/`, and deploys bumped `PUZZLE_REF`.)
 - **Local setup.** Plain Dart SDK only: a download of about 190 MB, plan on about 1 GB free. No Flutter is needed locally, because the Docker build handles it.
 
 ## Suggested first steps
 
-1. Set up the `tools/rack/engine` package: board model, part types, and pattern orientation and matching. Port `check_patterns.py` as a test and make it pass.
+1. Set up the `rack/engine` package: board model, part types, and pattern orientation and matching. Port `check_patterns.py` as a test and make it pass.
 2. Implement building, cable state (patched or blocked), the 16 module rules and the scoring sketch, using placeholder numbers. Give each rule its own test.
 3. Add a text-mode game runner in `bin/` for fast playtesting, alongside paper playtests.
 4. Write the generator: routes under the constraints, lineups with feasibility checks, balanced seeded part orders, screening, and a year of pregenerated days.

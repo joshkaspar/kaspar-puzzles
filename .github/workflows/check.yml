@@ -1,0 +1,37 @@
+name: check
+
+# Tests the engines, and rebuilds both pages from scratch to prove the committed
+# site/ matches its sources. The Dart version is pinned because dart2js output
+# changes between releases, and the pages must rebuild byte for byte.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.14.1
+
+      # build.sh runs rack/engine's tests first.
+      - name: Rack & Resonance (tests, then a full rebuild)
+        run: rack/build.sh
+
+      - name: Train Tracks (full rebuild)
+        run: tracks/build.sh
+
+      # Train Tracks has no test suite: check the solver against brute force.
+      - name: Train Tracks solver soundness
+        run: cd tracks && dart run bin/fuzz.dart 3000 | tee /dev/stderr | grep -q 'unsound deductions: 0$'
+
+      - name: Committed pages match their sources
+        run: git diff --exit-code --stat site/
