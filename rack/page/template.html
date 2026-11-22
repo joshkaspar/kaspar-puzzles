@@ -101,6 +101,7 @@
   #card .rule { height: 1px; background: rgba(0,0,0,.25); box-shadow: 0 1px 0 rgba(255,255,255,.6); }
   #card .row { display: flex; justify-content: space-between; font-size: 13px; font-weight: 500; letter-spacing: .5px; }
   #card .row.zero { color: #6b675f; }
+  #card .gapnote { font-size: 12.5px; line-height: 1.4; color: #3a3833; }
   #result .keys { flex-direction: column; gap: 12px; margin-top: auto; }
   #result .keys .key { flex: none; }
   #result .keys .key.cream { height: 56px; font-size: 15px; letter-spacing: 4px; display: flex; align-items: center; justify-content: center; gap: 12px; }
@@ -180,7 +181,7 @@
     <li><b>Build.</b> When parts match one of today's blueprints (turned or flipped any way), they glow. Tap a glowing part to choose where the module goes, then press BUILD. The parts clear, and the module takes that one slot. Building is optional.</li>
     <li><b>Patch.</b> The red cable runs from OSC to OUT. Black modules built on the cable are <i>patched</i> and score by their rule. A raw part on the cable blocks it until you build over it.</li>
     <li><b>Knobs and utilities.</b> Aluminum modulators and terracotta utilities can't go on the cable. They score from where they sit; LFOs and Envelopes add points to patched modules they touch.</li>
-    <li><b>End.</b> The patch ends when you can't place a part or build anything. Each empty slot and leftover part costs 1 point. Fill every cable slot for the complete-patch bonus, then play what you built.</li>
+    <li><b>End.</b> The patch ends when you can't place a part or build anything. Each empty slot and leftover part costs 1 point. Fill every cable slot for the complete-patch bonus, then play what you built. An open patch still plays: an empty cable slot sounds thin, and a part left on the cable crackles.</li>
   </ol>
   <p class="note">A new patch every day, the same for everyone. Progress is saved in this browser.<br>Inspired by Tiny Towns by Peter McPherson (AEG).</p>
 </div>
@@ -189,7 +190,7 @@
   <div class="inner">
     <div class="screen" style="height:40px"><div class="crt" style="height:100%;display:flex;justify-content:space-between;align-items:center;padding:0 12px;font-size:22px;letter-spacing:1px"><span id="rPatch"></span><span id="rState"></span><span id="rTime"></span></div></div>
     <div id="scopeBox">
-      <div id="scopeGlass"><svg viewBox="0 0 320 208" role="img" aria-label="Wireframe plot of the finished patch's waveform"><g id="scopeLines" fill="none" stroke="#86f7a0" stroke-linejoin="round" filter="url(#fPhos)"></g><text id="scopeChain" x="14" y="198" font-family="VT323" font-size="15" fill="#86f7a0" fill-opacity=".85"></text></svg></div>
+      <div id="scopeGlass"><svg viewBox="0 0 320 208" role="img" aria-label="Wireframe plot of the finished patch's waveform"><g id="scopeLines" fill="none" stroke="#86f7a0" stroke-linejoin="round" filter="url(#fPhos)"></g><text id="scopeSrc" x="14" y="22" font-family="VT323" font-size="15" fill="#86f7a0" fill-opacity=".85"></text><text id="scopeChain" x="14" y="198" font-family="VT323" font-size="15" fill="#86f7a0" fill-opacity=".85"></text></svg></div>
       <div class="engr">SIGNAL DISPLAY</div>
     </div>
     <div id="card" class="plate"></div>
@@ -439,7 +440,7 @@ function renderCabinet(v) {
   v.cells.forEach((c, i) => {
     const [x, y] = cellXY(i);
     let inner = '';
-    if (c.kind === 'osc') inner = ART.osc;
+    if (c.kind === 'osc') inner = ART.osc + `<text x="25" y="55.2" text-anchor="middle" font-family="Jost" font-weight="600" font-size="3.6" letter-spacing=".25" fill="#15170d">${v.sound.source.label}</text>`;
     else if (c.kind === 'out') inner = ART.out;
     else if (c.kind === 'part') inner = ART[PART_ART[c.part]];
     else if (c.kind === 'module') inner = moduleFace(c.module, !!c.lit, v.over ? (c.points ?? 0) : undefined);
@@ -531,7 +532,7 @@ function statusText(v) {
   const c = v.cable;
   const main = `CABLE · ${c.built} OF ${c.length} SLOTS BUILT` + (c.blocking ? ` · ${c.blocking} PART${c.blocking > 1 ? 'S' : ''} BLOCKING` : '');
   let hint;
-  if (v.over) hint = v.complete ? 'PATCH COMPLETE · PRESS RESULT' : 'NOTHING LEFT TO PLACE OR BUILD';
+  if (v.over) hint = v.complete ? 'PATCH COMPLETE · PRESS RESULT' : 'PATCH OPEN · GAPS PLAY THIN, PARTS CRACKLE · PRESS RESULT';
   else if (S.pick) hint = `BUILD ${lineupById[S.pick.module].name.toUpperCase()} IN ${cellName(S.pick.target)}? PRESS BUILD · TAP AGAIN FOR OTHER SLOTS`;
   else if (v.matches.length) hint = `${v.matches.length} BUILD${v.matches.length > 1 ? 'S' : ''} READY · TAP A GLOWING PART`;
   else if (v.canFinish) hint = 'NO ROOM FOR PARTS · BUILD OR FINISH';
@@ -660,17 +661,34 @@ setInterval(() => {
 // -------------------------------------------------------- result ----
 const chainText = (snd) => ['OSC', ...snd.chain.map((c) => c === 'blocked' ? '×' : c === 'empty' ? '·' : lineupById[c].label), 'OUT'].join(' › ') +
   (snd.mods.length ? ' · ' + snd.mods.map((m) => lineupById[m].label).join(' ') : '');
+// Squeezes the scope's text lines to fit the glass.
+function fitScopeText() {
+  for (const id of ['scopeSrc', 'scopeChain']) {
+    const t = $(id);
+    t.removeAttribute('textLength');
+    if (t.getComputedTextLength() > 292) { t.setAttribute('textLength', 292); t.setAttribute('lengthAdjust', 'spacingAndGlyphs'); }
+  }
+}
+// "2 empty cable slots and 1 part on the cable."
+function gapText(v) {
+  const empty = v.sound.chain.filter((c) => c === 'empty').length, blocked = v.sound.chain.filter((c) => c === 'blocked').length;
+  const parts = [];
+  if (empty) parts.push(`${empty} empty cable slot${empty > 1 ? 's' : ''}`);
+  if (blocked) parts.push(`${blocked} part${blocked > 1 ? 's' : ''} on the cable`);
+  return parts.join(' and ') + '.';
+}
 function openResult() {
   const v = S.v;
   $('rPatch').textContent = `PATCH ${patchStr}`;
   $('rState').textContent = v.complete ? 'COMPLETE' : 'OPEN';
   $('rTime').textContent = fmtTime(S.elapsed);
-  const ct = $('scopeChain');
-  ct.textContent = chainText(v.sound);
-  ct.removeAttribute('textLength');
-  if (ct.getComputedTextLength() > 292) { ct.setAttribute('textLength', 292); ct.setAttribute('lengthAdjust', 'spacingAndGlyphs'); }
+  $('scopeSrc').textContent = 'SOURCE · ' + v.sound.source.label;
+  $('scopeChain').textContent = chainText(v.sound);
+  fitScopeText();
+  document.fonts?.ready.then(fitScopeText); // measure again once VT323 has loaded
   $('card').innerHTML = `<div class="top"><span>FINAL SCORE</span><span class="crt big">${v.score.total}</span></div><div class="rule"></div>` +
-    v.score.lines.map((l) => `<div class="row${l.points ? '' : ' zero'}"><span>${l.label}</span><span>${l.points > 0 ? '+' : l.points < 0 ? '−' : ''}${Math.abs(l.points)}</span></div>`).join('');
+    v.score.lines.map((l) => `<div class="row${l.points ? '' : ' zero'}"><span>${l.label}</span><span>${l.points > 0 ? '+' : l.points < 0 ? '−' : ''}${Math.abs(l.points)}</span></div>`).join('') +
+    (v.complete ? '' : `<div class="rule"></div><div class="gapnote">Open patch: ${gapText(v)} It plays as it is: an empty slot sounds thin, and a part on the cable crackles.</div>`);
   drawStaticScope(v.sound);
   setPlayLabels();
   $('result').classList.add('open');
@@ -689,6 +707,17 @@ $('share').addEventListener('click', async () => {
 });
 
 // The idle scope: the chain's shaping applied to a plain wave, as a stack of lines.
+// One cycle per unit of p, for the plots.
+function baseWave(wave, p) {
+  const f = p - Math.floor(p);
+  switch (wave) {
+    case 'square': return f < .5 ? .8 : -.8;
+    case 'pulse': return f < .25 ? .8 : -.5;
+    case 'triangle': return 1 - 4 * Math.abs(f - .5);
+    case 'supersaw': return ((2 * f - 1) + (2 * ((p * 1.013) % 1) - 1)) / 2;
+    default: return 2 * f - 1;
+  }
+}
 function shapeFn(snd) {
   const fx = snd.chain.map((c) => ({
     vcf: (x, u, k) => x * .8, drive: (x) => Math.tanh(x * 3) * .9, fold: (x) => Math.sin(x * 3.2) * .9,
@@ -697,7 +726,7 @@ function shapeFn(snd) {
     blocked: (x, u) => x + ((Math.sin(u * 917) * 43758.5) % 1 > .93 ? .5 : 0), empty: (x) => x * .5,
   }[c]));
   return (u, k) => {
-    let x = Math.sin(u * Math.PI * 4) * (1 + k * .08);
+    let x = baseWave(snd.source.wave, u * 2) * (1 + k * .08);
     for (const f of fx) x = f(x, u, k);
     return Math.max(-1.3, Math.min(1.3, x));
   };
@@ -779,9 +808,10 @@ function startPatch(snd) {
   const rnd = rngFrom(snd.seed);
   const mods = new Set(snd.mods);
   const t0 = AC.currentTime + .08;
-  const bpm = mods.has('clock') ? 128 : 96;
+  const src = snd.source;
+  const bpm = mods.has('clock') ? Math.round(src.bpm * 4 / 3) : src.bpm; // a Clock pushes the tempo
   const step = 60 / bpm / 2; // eighth notes
-  const steps = 32;
+  const steps = 8 * Math.max(3, Math.round(10 / step / 8)); // about 10 seconds, whole bars
   const end = t0 + steps * step;
   const sources = [];
 
@@ -795,13 +825,25 @@ function startPatch(snd) {
   analyser.fftSize = 1024;
   master.connect(comp).connect(analyser).connect(AC.destination);
 
-  // OSC: the source.
-  const osc = AC.createOscillator();
-  osc.type = 'sawtooth';
-  sources.push(osc);
+  // OSC: the day's source voice (one or two oscillators).
   const amp = AC.createGain();
   amp.gain.value = 0;
-  osc.connect(amp);
+  const oscs = [];
+  const addOsc = (type, detune, level) => {
+    const o = AC.createOscillator(), g = AC.createGain();
+    if (type === 'pulse') { // 25% pulse, as a Fourier series
+      const n = 32, re = new Float32Array(n), im = new Float32Array(n);
+      for (let h = 1; h < n; h++) im[h] = (2 / (h * Math.PI)) * Math.sin(h * Math.PI * .25);
+      o.setPeriodicWave(AC.createPeriodicWave(re, im));
+    } else o.type = type;
+    o.detune.value = detune;
+    g.gain.value = level;
+    o.connect(g).connect(amp);
+    oscs.push(o);
+    sources.push(o);
+  };
+  if (src.wave === 'supersaw') { addOsc('sawtooth', -11, .6); addOsc('sawtooth', 11, .6); }
+  else addOsc(src.wave === 'saw' ? 'sawtooth' : src.wave, 0, src.wave === 'square' ? .7 : src.wave === 'triangle' ? 1.4 : 1);
   let node = amp;
   const filters = [];
 
@@ -867,14 +909,15 @@ function startPatch(snd) {
 
   // Modulators touching the cable.
   if (mods.has('lfo')) {
-    const l = AC.createOscillator(), g = AC.createGain(); l.frequency.value = 5.2; g.gain.value = 14; l.connect(g).connect(osc.detune); sources.push(l); l.start(t0);
+    const l = AC.createOscillator(), g = AC.createGain(); l.frequency.value = 5.2; g.gain.value = 14; l.connect(g); oscs.forEach((o) => g.connect(o.detune)); sources.push(l); l.start(t0);
     filters.forEach((f) => { const l2 = AC.createOscillator(), g2 = AC.createGain(); l2.frequency.value = .6; g2.gain.value = 650; l2.connect(g2).connect(f.frequency); sources.push(l2); l2.start(t0); });
   }
 
-  // The tune: a seeded motif, varied each bar.
-  const roots = [98, 110, 116.5, 130.8];
-  const root = roots[Math.floor(rnd() * roots.length)];
-  const scale = mods.has('quant') ? [0, 3, 5, 7, 10, 12, 15, 19] : [0, 7, 12, 0, 12];
+  // The tune: a seeded motif in the day's scale and rhythm, varied each bar.
+  // With a Quantizer it roams the whole scale over two octaves; without, it keeps to a few notes.
+  const root = src.root;
+  const full = src.steps;
+  const scale = mods.has('quant') ? [...full, ...full.map((x) => x + 12), 24] : [0, full[Math.floor(full.length / 2)], 12, 0];
   const motif = Array.from({ length: 8 }, () => (rnd() < .18 ? null : scale[Math.floor(rnd() * scale.length)]));
   motif[0] = 0;
   const env = mods.has('env');
@@ -883,8 +926,8 @@ function startPatch(snd) {
     if (k >= 16 && k % 8 === 7) semi = scale[Math.floor(rnd() * scale.length)];
     if (mods.has('random') && rnd() < .3) semi = semi === null ? 12 : semi + (rnd() < .5 ? 12 : -12);
     const t = t0 + k * step;
-    if (semi === null) continue;
-    osc.frequency.setValueAtTime(root * Math.pow(2, semi / 12), t);
+    if (semi === null || src.rhythm[k % 16] === '.') continue;
+    oscs.forEach((o) => o.frequency.setValueAtTime(root * Math.pow(2, semi / 12), t));
     const a = amp.gain;
     a.cancelScheduledValues(t);
     a.setValueAtTime(0, t);
@@ -894,14 +937,14 @@ function startPatch(snd) {
     if (mods.has('sh')) filters.forEach((f) => f.Q.setValueAtTime(3 + rnd() * 12, t));
   }
   if (mods.has('sh') && !filters.length) { // no filter to step: step the pitch's fine tune instead
-    for (let k = 0; k < steps; k++) osc.detune.setValueAtTime((rnd() * 2 - 1) * 30, t0 + k * step);
+    for (let k = 0; k < steps; k++) { const c = (rnd() * 2 - 1) * 30; oscs.forEach((o) => o.detune.setValueAtTime(c + o.detune.value, t0 + k * step)); }
   }
   if (mods.has('clock')) { // a tick on every beat
     const tick = noiseBuf(.03, (t) => (rnd() * 2 - 1) * Math.exp(-t * 220));
     const hp = AC.createBiquadFilter(), tg = AC.createGain(); hp.type = 'highpass'; hp.frequency.value = 5000; tg.gain.value = .35; hp.connect(tg).connect(master);
     for (let k = 0; k < steps; k += 2) { const s = AC.createBufferSource(); s.buffer = tick; s.connect(hp); s.start(t0 + k * step); sources.push(s); }
   }
-  osc.start(t0);
+  oscs.forEach((o) => o.start(t0));
   sources.forEach((s) => { try { s.stop(end + 2.4); } catch {} });
   frames = [];
   playing = {

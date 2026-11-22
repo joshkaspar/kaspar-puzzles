@@ -89,7 +89,24 @@ browsers, because saved games are lists of moves.
 - **Art:** the part and jack art is copied from `reference/mockups/Main.dc.html`. Module
   faces are drawn from small helpers (panel, knob, nut, LED, fader, CRT), one layout per
   module.
-- **Sound** (Web Audio, in the template's JS): a seeded 32-step tune on a saw
-  oscillator. Each cable slot is a stage in order, and LFO, Envelope, Random, S&H, Clock
-  and Quantizer touching the cable change the tune or its movement. The result scope
-  plots the live signal while it plays.
+- **Sound** (Web Audio, in the template's JS): about 10 seconds of a seeded tune.
+  - **The day's source** (`Source` in `engine/lib/src/sound.dart`) sets the waveform
+    (saw, square, triangle, two detuned saws, 25% pulse), the scale (minor pentatonic,
+    dorian, major, phrygian, and rarely whole-tone), the tempo (80–132 bpm), a 16-step
+    rhythm and the register.
+  - It's seeded from the day, so it's the same for everyone and isn't a player choice.
+    It's engraved on the OSC panel and shown on the result scope.
+  - Each cable slot is a stage in order. LFO, Envelope, Random, S&H, Clock and Quantizer
+    touching the cable change the tune or its movement; the Quantizer widens the
+    melody to the whole scale.
+  - Planned later: several sources. Each source jack would get its own `Source`.
+  - The result scope plots the live signal while it plays.
+
+## To do
+
+- **Tutorial.** A hands-on one, like Train Tracks': a small practice rack that walks
+  through placing, building, patching, knobs and the end, and opens on the first visit
+  in place of the how-to sheet.
+- **Tune the points in playtests.** All the values are in `Points` in `scoring.dart`.
+- **Multiple sources** (an idea for later). Each source jack would get its own `Source`.
+- **Move the games to `kaspar-puzzles`** (see [`../SPLIT-PLAN.md`](../SPLIT-PLAN.md)).
